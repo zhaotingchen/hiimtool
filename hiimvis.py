@@ -222,7 +222,7 @@ def vis_power_3d(sp,vis_gridded,vis_2=None,
     if verbose:
         print("delay ps calculation finished! Time spent: %f seconds" % 
               (time.time()-start_time))
-    return pdelay
+    return pdelay.numpy()
 
 def vis_power(sp,umode_i,umodeedges,vis_gridded,vis_2=None,
               device = None,verbose=False,sigma_cut=np.inf,window=None,
