@@ -31,7 +31,7 @@ class Specs:
         self.FWHM_freq_ref = FWHM_freq_ref
 
         #self.FWHM_arr = FWHM_ref*FWHM_freq_ref/self.freq_arr
-        #self.lamb_arr = constants.c.value/self.freq_arr
+        #self.lser-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:88.0) Gecko/20100101 Firefox/8amb_arr = constants.c.value/self.freq_arr
         #self.z_arr = f_21 / self.freq_arr -1
         #self.chi_arr = cosmo.comoving_distance(self.z_arr).value
         #self.Hz_arr = cosmo.H(self.z_arr).value
@@ -168,7 +168,62 @@ def grid_avg(sp,uedges,visdata,bldata,device=None,verbose=False):
               (time.time()-start_time))
     return vis_gridded,count,umode_i    
     
-    
+def vis_power_3d(sp,vis_gridded,vis_2=None,
+              device = None,verbose=False,sigma_cut=np.inf,window=None,
+             return_sigma=False):
+    """Calculate the 3D delay power spectrum at each (gridded) baseline"""
+    if window is None:
+        window = np.ones(sp.num_channels)
+        renorm = 1.0
+    else:
+        testarr_f = np.zeros(sp.num_channels)
+        testarr_f[sp.num_channels//2]=1.0
+        testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
+        testarr_w = (np.fft.fft(testarr*window))
+        renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+    window = torch.from_numpy(window).to(device)
+    if verbose:
+        start_time = time.time()
+        print("vis_power: start calculating delay power spectrum")
+    if device is None:
+        device = 'cpu'
+    if vis_2 is None:
+        vis_2 = vis_gridded
+    if device != 'cpu':
+        torch.cuda.empty_cache()
+    #large array. store in cpu first
+    vis_gridded = vis_gridded.reshape((sp.num_channels,-1))
+    vis_gridded = torch.from_numpy(vis_gridded).to(device)
+    vis_gridded[vis_gridded != vis_gridded] = 0 #nan_to_zero just in case
+    vis_gridded = fft(vis_gridded*window[:,None],dim=0)*sp.deltav_ch #Fourier Convention
+    vis_2 = vis_2.reshape((sp.num_channels,-1))
+    vis_2 = torch.from_numpy(vis_2).to(device)
+    vis_2[vis_2 != vis_2] = 0 #nan_to_zero just in case
+    vis_2 = fft(vis_2*window[:,None],dim=0)*sp.deltav_ch #Fourier Convention
+    vis_gridded = (torch.conj(vis_2)*vis_gridded).real
+    #large array. store in cpu first
+    pdelay = vis_gridded.to('cpu')*renorm 
+    #clear memory
+    vis_gridded = 0
+    vis_2 = 0
+    vis_ch = 0
+    pd_ch = 0
+    wai = 0
+    weight = 0
+    pd_avg = 0
+    pd_std = 0
+    vis_ch_mean = 0
+    vis_ch_sigma = 0
+    umodeedges = 0
+    umode_i = 0
+    window = 0
+    if device != 'cpu':
+        torch.cuda.empty_cache()
+    if verbose:
+        print("delay ps calculation finished! Time spent: %f seconds" % 
+              (time.time()-start_time))
+    return pdelay
+
 def vis_power(sp,umode_i,umodeedges,vis_gridded,vis_2=None,
               device = None,verbose=False,sigma_cut=np.inf,window=None,
              return_sigma=False):
