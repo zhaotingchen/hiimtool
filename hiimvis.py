@@ -335,6 +335,57 @@ def vis_power(sp,umode_i,umodeedges,vis_gridded,vis_2=None,
               (time.time()-start_time))
     return pdelay,uarr,sp.eta_arr()
 
+def bin_3d_to_cy(ps3d,umode_i,umodeedges,device='cpu',weights=None):
+    ps3d = torch.from_numpy(ps3d).to(device)
+    if weights is None:
+        weights = torch.ones_like(ps3d)
+    else:
+        weights = torch.from_numpy(weights).to(device)
+    umode_i = torch.from_numpy(umode_i).to(device)
+    umodeedges = torch.from_numpy(umodeedges).to(device)
+    indx = (umode_i[:,None]>=umodeedges[None,:-1])*(umode_i[:,None]<umodeedges[None,1:])
+    pscy = torch.sum(ps3d[:,:,None]*indx[None,:,:]*weights[:,:,None],dim=1)/torch.sum(indx[None,:,:]*weights[:,:,None],dim=1)
+    pscy = pscy.cpu().numpy()
+    # clear cache
+    ps3d = 0
+    umode_i = 0 
+    umodeedges = 0
+    indx = 0
+    if device != 'cpu':
+        torch.cuda.empty_cache()
+    return pscy
+
+def bin_3d_to_1d(sp,ps3d,umode_i,k1dedges,device='cpu',weights=None,error=False):
+    ps3d = torch.from_numpy(ps3d).to(device)
+    if weights is None:
+        weights = torch.ones_like(ps3d)
+    else:
+        weights = torch.from_numpy(weights).to(device)
+    umode_i = 2*np.pi*torch.from_numpy(umode_i).to(device)/sp.X_0() # to kperp
+    eta_i = torch.from_numpy(2*np.pi*sp.eta_arr()/sp.Y_0()) # to kpara
+    kfield = torch.sqrt(eta_i[:,None]**2+umode_i[None,:]**2)
+    k1dcen = (k1dedges[1:]+k1dedges[:-1])/2
+    k1dedges = torch.from_numpy(k1dedges).to(device)
+    indx = (kfield[:,:,None]>=k1dedges[None,None,:-1])*(kfield[:,:,None]<k1dedges[None,None,1:])
+    ps1d = torch.sum(ps3d[:,:,None]*indx*weights[:,:,None],dim=(1,0))/torch.sum(indx*weights[:,:,None],dim=(1,0))
+    if error is True:
+        ps1derr = torch.sqrt(torch.sum((ps3d[:,:,None]-ps1d[None,None,:])**2*(indx*weights[:,:,None])**2,dim=(1,0))/torch.sum((indx*weights[:,:,None]),dim=(1,0))**2)
+        ps1derr = ps1derr.cpu().numpy()
+    ps1d = ps1d.cpu().numpy()
+    # clear cache
+    ps3d = 0
+    umode_i = 0 
+    k1dedges = 0
+    indx = 0
+    kfield = 0
+    eta_i = 0
+    if device != 'cpu':
+        torch.cuda.empty_cache()
+    if error is True:
+        return ps1d,ps1derr,k1dcen
+    else:
+        return ps1d,k1dcen
+
 
 def inversemab(sp,umode_i,umodeedges,
                int_steps = 200, approxlim = 40, 

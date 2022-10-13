@@ -12,9 +12,10 @@ import sys
 from mpi4py import MPI
 
 sim_num = int(sys.argv[1])
+num_ch = int(sys.argv[2])
 sp = Specs(cosmo = Planck18,
-           freq_start_hz = 1050355468.75,
-           num_channels = 262,
+           freq_start_hz = 1054535156.25,
+           num_channels = num_ch,
            deltav_ch = 208984.375,
            FWHM_ref = 83.94201153142113/60*np.pi/180,
            FWHM_freq_ref = 1050e6,)
@@ -24,10 +25,10 @@ deltat = 8*units.s
 deltav = 208984.375*units.Hz
 sigma_n = (2*constants.k_B/ae_over_tsys/np.sqrt(deltat*deltav)).to('Jy').value
 
-visavg_odd = np.load('../visavg_odd.npy')
-visavg_even = np.load('../visavg_even.npy')
-counttot_even = np.load('../count_even.npy')
-counttot_odd = np.load('../count_odd.npy')
+visavg_odd = np.load('../gridded_vis/visavg_odd_220.npy')
+visavg_even = np.load('../gridded_vis/visavg_even_220.npy')
+counttot_even = np.load('../gridded_vis/count_even_220.npy')
+counttot_odd = np.load('../gridded_vis/count_odd_220.npy')
 
 umodeedges = np.linspace(-6000,6000,201)
 ucen = (umodeedges[1:]+umodeedges[:-1])/2
@@ -48,8 +49,10 @@ def worker(sim_id):
     noise_odd = (np.random.normal(0.0,sigma_n/np.sqrt(2),size= counti_odd.shape).astype('complex')
               +np.random.normal(0.0,sigma_n/np.sqrt(2),size= counti_odd.shape).astype('complex')*1j)
     noise_odd /= np.sqrt(counti_odd)
-    pd3d = vis_power_3d(sp,noise_even,vis_2=noise_odd,window = window)
-    np.save('../tnsimps/pd3d_'+sim_id,pd3d)
+    pd3d_even = vis_power_3d(sp,noise_even,window = window)
+    pd3d_odd = vis_power_3d(sp,noise_odd,window = window)
+    np.save('../tnsimps_even_220/pd3d_'+sim_id,pd3d_even)
+    np.save('../tnsimps_odd_220/pd3d_'+sim_id,pd3d_odd)
     return 1
 
 
