@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 from astropy.cosmology import Planck18_arXiv_v2 as Planck18
-from hiimvis import  Specs,inversemab,vis_power,BrightnessTempPS,vis_power_3d
+from hiimtool.hiimvis import  Specs,inversemab,vis_power,BrightnessTempPS,vis_power_3d
 import glob
 import torch
 from torch.fft import fft,fftn,fftfreq
