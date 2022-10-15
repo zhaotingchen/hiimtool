@@ -99,6 +99,14 @@ class Specs:
     def lambda_0(self):
         """The wavelength at z_0"""
         return constants.c.value/self.freq_0()
+    
+    def k_para(self):
+        """The line-of-sight k_para given by 2*pi*eta/Y"""
+        return 2*np.pi*self.eta_arr()/self.Y_0()
+    
+    def k_perp(self,umode):
+        """Calculate the transverse scale corresponding to the u-v radius"""
+        return 2*np.pi*umode/self.X_0()
 
 def grid_avg(sp,uedges,visdata,bldata,device=None,verbose=False):
     """Grid the visibility data onto u-v grids"""

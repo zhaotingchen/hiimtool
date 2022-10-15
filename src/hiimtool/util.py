@@ -24,7 +24,7 @@ def slicer_vectorized(a,start,end):
     b = a.view((str,1)).reshape(len(a),-1)[:,start:end]
     return np.frombuffer(b.tobytes(),dtype=(str,end-start))
 
-def calcov(im,weights=None,im2=None,weights2=None):
+def calcov(im,weights=None,im2=None,weights2=None,):
     '''calculate the covariance of a data set, assuming the first axis is the frequency'''
     num_ch = im.shape[0]
     im = im.reshape((num_ch,-1))
@@ -46,7 +46,7 @@ def calcov(im,weights=None,im2=None,weights2=None):
     
     cov = (torch.einsum('ia,ia,ja,ja->ij',im,weights,torch.conj(im2),weights2)/
            torch.einsum('ia,ja->ij',weights,weights2))
-    return cov
+    return cov.cpu().numpy()
 
 _range = range
 
@@ -157,3 +157,56 @@ def histogramdd(sample,bins=None,range=None,weights=None,remove_overflow=True):
         core = D * (slice(1, -1),)
         hist = hist[core]
     return hist,edges
+
+def bin_3d_to_1d(ps3d,kfield,k1dedges,device='cpu',weights=None,error=False):
+    """Bin a 3-D power spectrum into 1-D"""
+    ps3d = np.ravel(ps3d)
+    kfield = np.ravel(kfield)
+    ps3d = torch.from_numpy(ps3d).to(device)
+    if weights is None:
+        weights = torch.ones_like(ps3d)
+    else:
+        weights = np.ravel(weights)
+        weights = torch.from_numpy(weights).to(device)
+    kfield = torch.from_numpy(kfield).to(device)
+    k1dcen = (k1dedges[1:]+k1dedges[:-1])/2
+    k1dedges = torch.from_numpy(k1dedges).to(device)
+    indx = (kfield[:,None]>=k1dedges[None,:-1])*(kfield[:,None]<k1dedges[None,1:])
+    ps1d = torch.sum(ps3d[:,None]*indx*weights[:,None],dim=(0))/torch.sum(indx*weights[:,None],dim=(0))
+    if error is True:
+        ps1derr = torch.sqrt(torch.sum((ps3d[:,None]-ps1d[None,:])**2*(indx*weights[:,None])**2,dim=(0))/torch.sum((indx*weights[:,None]),dim=(0))**2)
+        ps1derr = ps1derr.cpu().numpy()
+    ps1d = ps1d.cpu().numpy()
+    # clear cache
+    ps3d = 0
+    umode_i = 0 
+    k1dedges = 0
+    indx = 0
+    kfield = 0
+    eta_i = 0
+    if device != 'cpu':
+        torch.cuda.empty_cache()
+    if error is True:
+        return ps1d,ps1derr,k1dcen
+    else:
+        return ps1d,k1dcen
+    
+def bin_3d_to_cy(ps3d,umode_i,umodeedges,device='cpu',weights=None):
+    ps3d = torch.from_numpy(ps3d).to(device)
+    if weights is None:
+        weights = torch.ones_like(ps3d)
+    else:
+        weights = torch.from_numpy(weights).to(device)
+    umode_i = torch.from_numpy(umode_i).to(device)
+    umodeedges = torch.from_numpy(umodeedges).to(device)
+    indx = (umode_i[:,None]>=umodeedges[None,:-1])*(umode_i[:,None]<umodeedges[None,1:])
+    pscy = torch.sum(ps3d[:,:,None]*indx[None,:,:]*weights[:,:,None],dim=1)/torch.sum(indx[None,:,:]*weights[:,:,None],dim=1)
+    pscy = pscy.cpu().numpy()
+    # clear cache
+    ps3d = 0
+    umode_i = 0 
+    umodeedges = 0
+    indx = 0
+    if device != 'cpu':
+        torch.cuda.empty_cache()
+    return pscy
