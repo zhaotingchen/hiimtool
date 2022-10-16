@@ -492,6 +492,9 @@ def estimator(num_ch,R_mat=None,device=None,renorm=''):
         mab = torch.diag(1/Hab.sum(dim=0))
     e_mat = torch.einsum('ab,bij->aij',mab,e_mat)
     wab = mab@Hab
+    factor = 1/(wab.sum()/num_ch)
+    wab = wab*factor
+    e_mat = e_mat*factor
     mab = 0
     Hab = 0
     idenm = 0
