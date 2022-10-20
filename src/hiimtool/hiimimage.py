@@ -1,11 +1,9 @@
 import numpy as np
-import healpy as hp
 from astropy import constants,units
 import time
 import torch
 from torch.fft import fft,fftn,fftfreq
 import warnings
-import progressbar
 from itertools import product
 import psutil
 from .util import histogramdd
