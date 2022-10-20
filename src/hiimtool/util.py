@@ -3,7 +3,6 @@ from astropy import constants,units
 import time
 import warnings
 from itertools import product
-import psutil
 import torch
 from torch.fft import fft,fftn,fftfreq
 #from hiimvis import Specs

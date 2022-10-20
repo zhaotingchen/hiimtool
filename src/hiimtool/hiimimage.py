@@ -1,14 +1,13 @@
 import numpy as np
-import healpy as hp
 from astropy import constants,units
 import time
 import torch
 from torch.fft import fft,fftn,fftfreq
 import warnings
-import progressbar
 from itertools import product
 import psutil
 from .util import histogramdd
+from scipy.linalg import sqrtm
 
 def get_power_cy(
     pos,kperpedges,len_side,N,weights=None,
@@ -279,27 +278,29 @@ def get_power_3d(
         testarr_w = (np.fft.fft(testarr*window))
         renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
     window = torch.from_numpy(window).to(device)
+    # grid the density field
+    den= grid_im(pos,len_side,N,weights=weights,
+                   verbose=verbose,norm=norm,)
+    
     len_grid = len_side/(N-1)
-    lenxbin = torch.linspace(-len_grid[0]/2,len_side[0]+len_grid[0]/2,
-                             steps=N[0]+1,device=device)
-    lenybin = torch.linspace(-len_grid[1]/2,len_side[1]+len_grid[1]/2,
-                             steps=N[1]+1,device=device)
-    lenzbin = torch.linspace(-len_grid[2]/2,len_side[2]+len_grid[2]/2,
-                             steps=N[2]+1,device=device)
-    pos = torch.from_numpy(pos).to(device)
+
     if pos2 is None:
-        pos2 = pos
+        if weights2 is None:
+            den2 = den
+        else:
+            den2= grid_im(pos,len_side,N,weights=weights2,
+                   verbose=verbose,norm=norm,)
+            flag12=True
     else:
-        pos2 = torch.from_numpy(pos2).to(device)
+        if weights2 is None:
+            den2= grid_im(pos2,len_side,N,weights=weights,
+                   verbose=verbose,norm=norm,)
+        else:
+            den2= grid_im(pos2,len_side,N,weights=weights2,
+                   verbose=verbose,norm=norm,)
         flag12 = True
-    weights = torch.from_numpy(weights).to(device)
-    den,bins = histogramdd(pos.T,bins=[lenxbin,lenybin,lenzbin],weights=weights)
-    if weights2 is None:
-        den2,bins = histogramdd(pos2.T,bins=[lenxbin,lenybin,lenzbin],weights=weights)
-    else:
-        flag12 = True
-        weights2 = torch.from_numpy(weights2).to(device)
-        den2,bins = histogramdd(pos2.T,bins=[lenxbin,lenybin,lenzbin],weights=weights2)
+    den = torch.from_numpy(den).to(device)
+    den2 = torch.from_numpy(den2).to(device)
     #clear memory
     bins = 0
     pos = 0
@@ -309,14 +310,6 @@ def get_power_3d(
     lenxbin = 0
     lenybin = 0
     lenzbin = 0
-    #den = den.float() # reduce size
-    #density to delta
-    if norm:
-        den = ((den-den.mean())/den.mean()).float()
-        den2 = ((den2-den2.mean())/den2.mean()).float()
-    else:
-        den = (den-den.mean()).float()
-        den2 = (den2-den2.mean()).float()
     vbox = np.product(len_side)
     den = fftn(den*window[None,None,:])
     den2 = fftn(den2*window[None,None,:])
@@ -360,3 +353,151 @@ def get_power_3d(
             "ps calculation finished! Time spent: %f seconds" % 
             (time.time()-start_time))
     return den,kxvec,kyvec,kzvec
+
+def imdeconv(image,beam,psf,findx = 0):
+    """
+    Take out the primary beam term. 
+    Deconvolve the psf and reconvolve with the worst psf (default the first channel)
+    """
+    num_ch = image.shape[0]
+    imsize = image.shape[1]
+    tdecov = np.zeros_like(image)
+    pos = np.zeros((num_ch,imsize,imsize,3))
+    tdecov = np.zeros_like(image)
+    for i in range(num_ch):
+        tfft = np.fft.fftn(image[i]/beam[i]**2)
+        psf_f = np.fft.fftn(psf[i])
+        tdecov[i] = np.fft.fftshift(np.fft.ifftn(tfft/psf_f)).real
+    trecov = np.zeros_like(image)
+    psf_f = np.fft.fftn(psf[findx])
+    for i in range(num_ch):
+        tfft = np.fft.fftn(tdecov[i])
+        trecov[i] = np.fft.fftshift(np.fft.ifftn(tfft*psf_f)).real
+    return trecov
+
+def grid_im(
+    pos,len_side,N,weights=None,
+    device=None,norm=False,verbose=False,center=True):
+    """Calculate the 1d power spectrum given a discrete sample of sources"""
+    if verbose:
+        start_time = time.time()
+        print("get_power:start calculating the power spectrum")
+    num_sources,num_dim = pos.shape
+    if (len(len_side) != num_dim):
+        raise ValueError('The dimensions of samples and the dimensions' 
+                         'of the grids does not match')
+    if device is None:
+        device = 'cpu'
+        
+    if weights is None:
+        weights = np.ones(pos.shape[0])
+    
+    N = np.array([N]).reshape((-1)).astype('int')
+    if len(N) ==1:
+        N = np.ones(3).astype('int')*N
+    
+    len_grid = len_side/(N-1)
+    lenxbin = torch.linspace(-len_grid[0]/2,len_side[0]+len_grid[0]/2,
+                             steps=N[0]+1,device=device)
+    lenybin = torch.linspace(-len_grid[1]/2,len_side[1]+len_grid[1]/2,
+                             steps=N[1]+1,device=device)
+    lenzbin = torch.linspace(-len_grid[2]/2,len_side[2]+len_grid[2]/2,
+                             steps=N[2]+1,device=device)
+    pos = torch.from_numpy(pos).to(device)
+    weights = torch.from_numpy(weights).to(device)
+    den,bins = histogramdd(pos.T,bins=[lenxbin,lenybin,lenzbin],weights=weights)
+    #clear memory
+    bins = 0.0
+    pos = 0
+    weights = 0
+    lenxbin = 0
+    lenybin = 0
+    lenzbin = 0
+    den = den.float() # reduce size
+    if norm:
+        den = ((den-den.mean())/den.mean()).float()
+    else:
+        if center:
+            den = (den-den.mean()).float()
+    if device != 'cpu':
+        torch.cuda.empty_cache()
+    den = den.cpu().numpy()
+    return den
+
+def dft_matrix(num_p,device=None):
+    """The 1-D DFT kernel with forward renormalisation"""
+    # the ordinary dft kernel for each u-v grid
+    if device is None:
+        device = 'cpu'
+    marr = torch.linspace(0,num_p-1,num_p).to(torch.complex128).to(device)
+    dft_block = torch.exp(-2*np.pi*1j*marr[:,None]*marr[None,:]/num_p)
+    marr = 0.0
+    if device != 'cpu':
+        torch.cuda.empty_cache()
+    return dft_block/num_p
+
+def C_alpha(num_ch,device=None):
+    if device is None:
+        device = 'cpu'
+    idenm = torch.diag(
+            torch.ones(num_ch)).type(torch.complex128).to(device)
+    diagwa = torch.einsum('ai,ij->aij',idenm,idenm)
+    result = dft_matrix(num_ch,device=device)
+    result = torch.einsum('ij,ajk,kl->ail',result,diagwa,
+                         torch.conj(result.t()))*num_ch
+    diagwa = 0
+    idenm = 0
+    if device != 'cpu':
+        torch.cuda.empty_cache()
+    return result
+
+def H_alpha_beta(num_ch,R_mat=None,device=None):
+    if device is None:
+        device = 'cpu'
+    if R_mat is None:
+        R_mat = torch.diag(torch.ones(num_ch)).type(torch.complex128).to(device)
+    calpha=C_alpha(num_ch,device=device)
+    Hab = torch.einsum('ij,ajk,kl,bli->ab',
+                       torch.conj(R_mat.t()),
+                       calpha,
+                       R_mat,
+                       calpha
+                      )
+    return Hab
+
+def estimator(num_ch,R_mat=None,device=None,renorm=''):
+    if device is None:
+        device = 'cpu'
+    e_mat = dft_matrix(num_ch,device=device)
+    if R_mat is None:
+        R_mat = torch.diag(torch.ones(num_ch)).type(torch.complex128).to(device)
+    idenm = torch.diag(
+            torch.ones(num_ch)).type(torch.complex128).to(device)
+    diagwa = torch.einsum('ai,ij->aij',idenm,idenm)
+    e_mat = torch.einsum(
+        'ij,jk,akl,lm,mn->ain',
+        torch.conj(R_mat).t(),
+        torch.conj(e_mat).t(),
+        diagwa,
+        e_mat,
+        R_mat
+    )
+    Hab = H_alpha_beta(num_ch,R_mat=R_mat,device=device)
+    if renorm == 'sqrtm':
+        mab = sqrtm(Hab.cpu().numpy())
+        mab = torch.from_numpy(mab).to(device)
+    else:
+        mab = torch.diag(1/Hab.sum(dim=0))
+    e_mat = torch.einsum('ab,bij->aij',mab,e_mat)
+    wab = mab@Hab
+    factor = 1/(wab.sum()/num_ch)
+    wab = wab*factor
+    e_mat = e_mat*factor
+    mab = 0
+    Hab = 0
+    idenm = 0
+    diagwa = 0
+    R_mat = 0
+    if device != 'cpu':
+        torch.cuda.empty_cache()
+    return e_mat,wab
