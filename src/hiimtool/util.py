@@ -23,7 +23,7 @@ def slicer_vectorized(a,start,end):
     b = a.view((str,1)).reshape(len(a),-1)[:,start:end]
     return np.frombuffer(b.tobytes(),dtype=(str,end-start))
 
-def calcov(im,weights=None,im2=None,weights2=None,):
+def calcov(im,weights=None,im2=None,weights2=None,split=None):
     '''calculate the covariance of a data set, assuming the first axis is the frequency'''
     num_ch = im.shape[0]
     im = im.reshape((num_ch,-1))
@@ -43,9 +43,28 @@ def calcov(im,weights=None,im2=None,weights2=None,):
         weights2 = torch.from_numpy(weights2).to(torch.complex64)
     weights = weights.reshape((num_ch,-1))
     
-    cov = (torch.einsum('ia,ia,ja,ja->ij',im,weights,torch.conj(im2),weights2)/
+    if split is None:
+        cov = (torch.einsum('ia,ia,ja,ja->ij',im,weights,torch.conj(im2),weights2)/
            torch.einsum('ia,ja->ij',weights,weights2))
-    return cov.cpu().numpy()
+        cov = cov.cpu().numpy()
+    else:
+        split = int(split)
+        cov = torch.zeros((num_ch,num_ch)).to(torch.complex64)
+        weight_sum = torch.zeros((num_ch,num_ch)).to(torch.complex64)
+        im = torch.split(im,split,dim=-1)
+        im2 = torch.split(im2,split,dim=-1)
+        weights = torch.split(weights,split,dim=-1)
+        weights2 = torch.split(weights2,split,dim=-1)
+        for i in range(len(im)):
+            cov+=torch.einsum('ia,ia,ja,ja->ij',im[i],weights[i],torch.conj(im2[i]),weights2[i])
+            weight_sum += torch.einsum('ia,ja->ij',weights[i],weights2[i])
+        cov = cov/weight_sum
+        weight_sum = 0.0
+        cov = cov.cpu().numpy()
+    return cov
+
+
+
 
 _range = range
 
