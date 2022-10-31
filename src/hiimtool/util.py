@@ -194,6 +194,7 @@ def bin_3d_to_1d(ps3d,kfield,k1dedges,device='cpu',weights=None,error=False):
     if error is True:
         ps1derr = torch.sqrt(torch.sum((ps3d[:,None]-ps1d[None,:])**2*(indx*weights[:,None])**2,dim=(0))/torch.sum((indx*weights[:,None]),dim=(0))**2)
         ps1derr = ps1derr.cpu().numpy()
+        nmodes = torch.sum(indx*weights[:,None],dim=(0)).cpu().numpy()
     ps1d = ps1d.cpu().numpy()
     # clear cache
     ps3d = 0
@@ -205,7 +206,7 @@ def bin_3d_to_1d(ps3d,kfield,k1dedges,device='cpu',weights=None,error=False):
     if device != 'cpu':
         torch.cuda.empty_cache()
     if error is True:
-        return ps1d,ps1derr,k1dcen
+        return ps1d,ps1derr,nmodes,k1dcen
     else:
         return ps1d,k1dcen
     
