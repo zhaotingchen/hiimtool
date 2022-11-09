@@ -24,11 +24,10 @@ f_21 = 1420405751.7667 # in Hz
 save_dir = "/idia/projects/mightee/zchen/vis_grid/deep2/"
 ms_dir = '/idia/projects/mightee/DEEP2_data/wselfcal/'
 
-def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,fill=False,verbose=False):
+def sumamp(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',fill=False,verbose=False):
     '''
-    Returns the gridded visibility sum and the baseline number counts of a given scan for a ms file.
-    Note that the output is **SUMMED** visibility not average!
-
+    Returns the SUM of the amplitude square of the visibilities, useful for checking noise rms.
+    
     Parameters
     ----------
         scan_indx: int 
@@ -38,7 +37,7 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,fill=False,verbose=False
             The list of the subms files corresponding to each scan
         
         uvedges: numpy array
-            The edges of the uv grids in wavelength unit (dimensionless, not in metres)
+            The edges of the uv grids in wavelength unit (dimensionless, not in metres). The array should be formatted as [umin,umax,vmin,vmax] or [|u|min,|u|max]
         
         flag_frac: float
             If a baseline has frag_frac or larger fraction of frequency channels flagged, then this baseline is neglected
@@ -47,6 +46,9 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,fill=False,verbose=False
             The channel selection function to pass into :py:meth:`casatools.selectchannel`. 
             See https://casadocs.readthedocs.io/en/stable/api/tt/casatools.ms.html#casatools.ms.ms.selectchannel .
         
+        stokes: string, default "I"
+            Which Stokes parameter to grid. Currently only support I and V.
+            
         fill: Boolean, default False
             Whether to fill flagged channels (after `frag_frac` exclusion) with the nearest neighbours
         
@@ -55,10 +57,16 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,fill=False,verbose=False
 
     Returns
     -------
-        vis_gridded: complex array of shape (num_ch,num_uv,num_uv).
-        count: float array. If `fill=True` then shape is (num_uv,num_uv), else (num_ch,num_uv,num_uv).
+        vis_sum: float.
+        count: float.
     '''
-    # note that here the output is the sum of the vis not the average
+    if stokes=='I':
+        pol = (0,3)
+        sign = np.array([1,1])
+    else:
+        pol = (1,2)
+        sign = np.array([-1j,1j])
+        
     num_ch = sel_ch[0]
     ch_arr = np.linspace(0,num_ch-1,num_ch).astype('int')
     filename = submslist[scan_indx]
@@ -86,11 +94,113 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,fill=False,verbose=False
     lamb_0 = (constants.c/f_21/units.Hz).to('m').value*(1+z_0)
     
     if verbose:
+        print('Calculating...',datetime.datetime.now().time().strftime("%H:%M:%S"))
+    # meter to wavelength
+    uarr /= lamb_0
+    varr /= lamb_0
+    flag_I = (flag[pol[0]]+flag[pol[1]])>0  # if XX or YY is flagged then I is flagged 
+    indx = flag_I.mean(axis=0)<flag_frac
+    #get rid of the flag_frac excluded channels
+    data = data[:,:,indx] 
+    flag = flag[:,:,indx]
+    uarr = uarr[indx]
+    varr = varr[indx]
+    flag_I = flag_I[:,indx]
+    if len(uvedges) == 4:
+        indx = (uarr>uvedges[0])*(uarr<uvedges[1])*(varr>uvedges[2])*(varr<uvedges[3])
+    else:
+        umodearr = np.sqrt(uarr**2+varr**2)
+        indx = (umodearr>uvedges[0])*(umodearr<uvedges[1])
+    data = data[:,:,indx]
+    flag_I = flag_I[:,indx]
+    data = (data[pol[0]]*sign[0]+data[pol[1]]*sign[1])/2 # just keep I
+    vis_sum = (np.abs(data*(1-flag_I))**2).sum()
+    count = (1-flag_I).sum()
+    if verbose:
+        print('Finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
+    return vis_sum,count
+    
+
+def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',col='corrected_data',fill=False,verbose=False):
+    '''
+    Returns the gridded visibility sum and the baseline number counts of a given scan for a ms file.
+    Note that the output is **SUMMED** visibility not average!
+
+    Parameters
+    ----------
+        scan_indx: int 
+            The indx of the subms file (scan) to read.
+        
+        submsliat: string array 
+            The list of the subms files corresponding to each scan
+        
+        uvedges: numpy array
+            The edges of the uv grids in wavelength unit (dimensionless, not in metres)
+        
+        flag_frac: float
+            If a baseline has frag_frac or larger fraction of frequency channels flagged, then this baseline is neglected
+        
+        sel_ch: float array
+            The channel selection function to pass into :py:meth:`casatools.selectchannel`. 
+            See https://casadocs.readthedocs.io/en/stable/api/tt/casatools.ms.html#casatools.ms.ms.selectchannel .
+        
+        stokes: string, default "I"
+            Which Stokes parameter to grid. Currently only support I and V.
+        
+        col: string, default "corrected_data"
+            Which data column to read. Default reads the corrected_data column after selfcal.
+            
+        fill: Boolean, default False
+            Whether to fill flagged channels (after `frag_frac` exclusion) with the nearest neighbours
+        
+        verbose: Boolean, default False
+            Whether to print information about time and which block and scan the function is reading.
+
+    Returns
+    -------
+        vis_gridded: complex array of shape (num_ch,num_uv,num_uv).
+        count: float array. If `fill=True` then shape is (num_uv,num_uv), else (num_ch,num_uv,num_uv).
+    '''
+    # note that here the output is the sum of the vis not the average
+    if stokes=='I':
+        pol = (0,3)
+        sign = np.array([1,1])
+    else:
+        pol = (1,2)
+        sign = np.array([-1j,1j])
+        
+    num_ch = sel_ch[0]
+    ch_arr = np.linspace(0,num_ch-1,num_ch).astype('int')
+    filename = submslist[scan_indx]
+    msset = ms()
+    msset.open(filename)
+    msset.selectchannel(sel_ch[0],sel_ch[1],sel_ch[2],sel_ch[3])
+    metadata = msset.metadata()
+    freq_arr = metadata.chanfreqs(0)[sel_ch[1]:sel_ch[1]+sel_ch[0]] # get the frequencies
+    assert len(freq_arr) == num_ch
+    #get all the data needed
+    if verbose:
+        print('Reading data...',datetime.datetime.now().time().strftime("%H:%M:%S"))
+    data = msset.getdata(col)[col]
+    uarr = msset.getdata('u')['u']
+    varr = msset.getdata('v')['v']
+    flag = msset.getdata('flag')['flag']
+    msset.close()
+    if verbose:
+        print('Finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
+    #data = data[:,:num_ch,:]
+    #flag = flag[:,:num_ch,:]
+    #z_arr = f_21/freq_arr-1 # redshifts
+    z_0 = 2*f_21/(freq_arr[0]+freq_arr[-1])-1
+    #z_0 = (z_arr[0]+z_arr[-1])/2 # effective redshifts
+    lamb_0 = (constants.c/f_21/units.Hz).to('m').value*(1+z_0)
+    
+    if verbose:
         print('Gridding...',datetime.datetime.now().time().strftime("%H:%M:%S"))
     # meter to wavelength
     uarr /= lamb_0
     varr /= lamb_0
-    flag_I = (flag[0]+flag[-1])>0  # if XX or YY is flagged then I is flagged
+    flag_I = (flag[pol[0]]+flag[pol[1]])>0  # if XX or YY is flagged then I is flagged 
     indx = flag_I.mean(axis=0)<flag_frac
     #get rid of the flag_frac excluded channels
     data = data[:,:,indx] 
@@ -100,7 +210,7 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,fill=False,verbose=False
     flag_I = flag_I[:,indx]
     
     if fill:
-        for p_indx in (0,3): # XX and YY
+        for p_indx in pol: # XX and YY
             farr,rowarr = np.where(flag[p_indx]==1) # find the flags
             # black magic for finding the nearest unflagged channel
             # this line is designed to give divided by zero. suppress that specific warning.
@@ -115,7 +225,7 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,fill=False,verbose=False
             data[p_indx,farr,rowarr] = data[p_indx,freqfill,rowarr] 
         flag_I = np.zeros_like(flag_I) # if filled then all the channels are used
     
-    data = (data[0]+data[-1])/2 # just keep I
+    data = (data[pol[0]]*sign[0]+data[pol[1]]*sign[1])/2 # just keep I
     vis_gridded = np.zeros((num_ch,len(uvedges)-1,len(uvedges)-1),dtype='complex')
     # if filled, then all the channels have same number of baselines in each u-v grid
     if fill:
@@ -174,6 +284,12 @@ def save_scan(i,args):
             The channel selection function to pass into :py:meth:`casatools.selectchannel`. 
             See https://casadocs.readthedocs.io/en/stable/api/tt/casatools.ms.html#casatools.ms.ms.selectchannel .
         
+        stokes: string, default "I"
+            Which Stokes parameter to grid. Currently only support I and V.
+            
+        col: string, default "corrected_data"
+            Which data column to read. Default reads the corrected_data column after selfcal.
+            
         fill: Boolean, default False
             Whether to fill flagged channels (after `frag_frac` exclusion) with the nearest neighbours
         
@@ -186,13 +302,13 @@ def save_scan(i,args):
     -------
         1
     '''
-    submslist,uvedges,frac,block_num,scratch_dir,sel_ch,fill,verbose = args
+    submslist,uvedges,frac,block_num,scratch_dir,sel_ch,stokes,col,fill,verbose = args
     scan_id = slicer_vectorized(submslist,-7,-3)
     if verbose:
         print('Reading block', block_num,'Scan', scan_id[i],datetime.datetime.now().time().strftime("%H:%M:%S"))
-    vis_i, count_i = worker(i,submslist,uvedges,frac,sel_ch,fill=fill,verbose=verbose)
-    np.save(scratch_dir+'vis_'+block_num+'_'+scan_id[i],vis_i)
-    np.save(scratch_dir+'count_'+block_num+'_'+scan_id[i],count_i)
+    vis_i, count_i = worker(i,submslist,uvedges,frac,sel_ch,stokes,col=col,fill=fill,verbose=verbose)
+    np.save(scratch_dir+'vis_'+block_num+'_'+scan_id[i]+'_'+stokes,vis_i)
+    np.save(scratch_dir+'count_'+block_num+'_'+scan_id[i]+'_'+stokes,count_i)
     if verbose:
         print('Block', block_num,'Scan', scan_id[i],'finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
     return 1
