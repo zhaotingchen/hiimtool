@@ -176,7 +176,7 @@ def histogramdd(sample,bins=None,range=None,weights=None,remove_overflow=True):
         hist = hist[core]
     return hist,edges
 
-def bin_3d_to_1d(ps3d,kfield,k1dedges,device='cpu',weights=None,error=False):
+def bin_3d_to_1d(ps3d,kfield,k1dedges,device='cpu',weights=None,error=False,sigma_cut=np.inf):
     """Bin a 3-D power spectrum into 1-D"""
     ps3d = np.ravel(ps3d)
     kfield = np.ravel(kfield)
