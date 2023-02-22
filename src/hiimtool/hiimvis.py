@@ -30,11 +30,6 @@ class Specs:
         self.FWHM_ref = FWHM_ref
         self.FWHM_freq_ref = FWHM_freq_ref
 
-        #self.FWHM_arr = FWHM_ref*FWHM_freq_ref/self.freq_arr
-        #self.lser-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:88.0) Gecko/20100101 Firefox/8amb_arr = constants.c.value/self.freq_arr
-        #self.z_arr = f_21 / self.freq_arr -1
-        #self.chi_arr = cosmo.comoving_distance(self.z_arr).value
-        #self.Hz_arr = cosmo.H(self.z_arr).value
         
     def freq_arr(self):
         """The observing frequency of each channel"""

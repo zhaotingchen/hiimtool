@@ -2,7 +2,7 @@ from casatools import ms,table
 import numpy as np
 import sys
 import time
-from astropy.cosmology import Planck18_arXiv_v2 as Planck18
+from astropy.cosmology import Planck18
 import glob
 from astropy import constants,units
 import datetime

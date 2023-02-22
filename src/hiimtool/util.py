@@ -176,7 +176,7 @@ def histogramdd(sample,bins=None,range=None,weights=None,remove_overflow=True):
         hist = hist[core]
     return hist,edges
 
-def bin_3d_to_1d(ps3d,kfield,k1dedges,device='cpu',weights=None,error=False):
+def bin_3d_to_1d(ps3d,kfield,k1dedges,device='cpu',weights=None,error=False,sigma_cut=np.inf):
     """Bin a 3-D power spectrum into 1-D"""
     ps3d = np.ravel(ps3d)
     kfield = np.ravel(kfield)
@@ -229,3 +229,71 @@ def bin_3d_to_cy(ps3d,umode_i,umodeedges,device='cpu',weights=None):
     if device != 'cpu':
         torch.cuda.empty_cache()
     return pscy
+
+def getvis(vis_file,fill,umodeedges):
+    '''
+    Function to read visibility data.
+    
+    Parameters
+    ----------
+        vis_file: list of strings
+            The file names for the input. The list should be the paths of (vis_even,vis_odd,count_even,count_odd) arrays.
+            For visibility data, the array should be in the shape of (num_ch,num_uv,num_uv).
+            Note that the visibility data is the SUMMED visibility not the averaged.
+            For baseline count data, the array should be of (num_ch,num_uv,num_uv) if ``fill==False`` or (num_uv,num_uv) if ``fill==True``.
+        
+        fill: bool
+            Whether the flagged channel is filled by the nearest neighbor.
+        
+        umodeedges: np array
+            The u-v bins for the gridded visibility.
+    
+    Returns
+    -------
+        visi_even: np array
+            The averaged visibility data of (num_ch,num_grid) for the even scan, where num_grid is the number of u-v grids that are sampled.
+        
+        visi_odd: np array
+            Same as ``visi_even`` but for the odd scan.
+        
+        counti_even: np array
+            The number of baselines inside the u-v grids ``visi_even`` for the even scan.
+        
+        counti_odd: np array
+            The number of baselines inside the u-v grids ``visi_odd`` for the odd scan.
+            
+        umode_i: np array
+            The u-v mode ``|u| = sqrt(u^2+v^2)`` for each grid in the num_grid.
+        
+        uarr_i: np array
+            The u coordinate for each grid in the num_grid.
+            
+        varr_i: np array
+            The v coordinate for each grid in the num_grid.
+    '''
+    visavg_even = np.load(vis_file[0])
+    visavg_odd = np.load(vis_file[1])
+    counttot_even = np.load(vis_file[2])
+    counttot_odd = np.load(vis_file[3])
+    visavg_even = np.nan_to_num(visavg_even/counttot_even)
+    visavg_odd = np.nan_to_num(visavg_odd/counttot_odd)
+    num_ch = len(visavg_even)
+    ucen = (umodeedges[1:]+umodeedges[:-1])/2
+    uu,vv = np.meshgrid(ucen,ucen)
+    umode_i = np.sqrt(ucen[:,None]**2+ucen[None,:]**2)
+    if fill:
+        indx = (counttot_even>0)*(counttot_odd>0)
+    else:
+        indx = np.prod(counttot_even>0,axis=0)*np.prod(counttot_odd>0,axis=0)
+    visi_even = visavg_even[np.where(np.broadcast_to(indx,visavg_even.shape))].reshape(num_ch,-1)
+    visi_odd = visavg_odd[np.where(np.broadcast_to(indx,visavg_odd.shape))].reshape(num_ch,-1)
+    if fill:
+        counti_even = counttot_even[indx].reshape(-1)
+        counti_odd = counttot_odd[indx].reshape(-1)
+    else:
+        counti_even = counttot_even[np.where(np.broadcast_to(indx,visavg_even.shape))].reshape(num_ch,-1)
+        counti_odd = counttot_odd[np.where(np.broadcast_to(indx,visavg_odd.shape))].reshape(num_ch,-1)
+    umode_i = umode_i[np.where(indx)]
+    uarr_i = uu[np.where(indx)]
+    varr_i = vv[np.where(indx)]
+    return visi_even,visi_odd,counti_even,counti_odd,umode_i,uarr_i,varr_i
