@@ -5,6 +5,7 @@ import time
 import glob
 from astropy import constants,units
 import datetime
+import re
 
 #fill=True
 #verbose=True
@@ -16,12 +17,75 @@ def slicer_vectorized(a,start,end):
     return np.frombuffer(b.tobytes(),dtype=(str,end-start))
 
 f_21 = 1420405751.7667 # in Hz
-#num_ch=220
-#flag_frac = 0.2 # if flagged fraction larger than this, throw away
-#ch_arr = np.linspace(0,num_ch-1,num_ch).astype('int')
-#uvedges = np.linspace(-6000,6000,201)-30
-save_dir = "/idia/projects/mightee/zchen/vis_grid/deep2/"
-ms_dir = '/idia/projects/mightee/DEEP2_data/wselfcal/'
+
+def read_ms(filename,keys,sel_ch,verbose=False):
+    '''
+    A function to read in the measurementset data and returns the values.
+    
+    Parameters
+    ----------
+        filename: str 
+            The name of the measurementset file to read.
+        
+        keys: list or array of strings 
+            The keywords to read.
+            
+        sel_ch: float array
+            The channel selection function to pass into :py:meth:`casatools.selectchannel`. 
+            See https://casadocs.readthedocs.io/en/stable/api/tt/casatools.ms.html#casatools.ms.ms.selectchannel .
+        verbose: bool, default False
+            Whether to print out time information.
+            
+    Returns
+    -------
+        data: a list of np arrays containing the data corresponding to the keywords, indexed according to the input `keys`.
+    '''
+    if verbose:
+        print('Reading data...',datetime.datetime.now().time().strftime("%H:%M:%S"))
+    msset = ms()
+    msset.open(filename)
+    msset.selectchannel(sel_ch[0],sel_ch[1],sel_ch[2],sel_ch[3])
+    data = msset.getdata(keys)
+    msset.close()
+    keylist = np.array(list(data.keys()))
+    key_pos = np.where(np.array(keys)[:,None]==keylist[None,:])[-1]
+    data = np.array(list(data.values()))[key_pos]
+    if verbose:
+        print('Finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
+    return data
+
+def fill_row(flag):
+    '''
+    black magic for finding the nearest unflagged channel.
+    
+    Parameters
+    ----------
+        flag: bool array. 
+            The data flags. must of in the shape of (num_channels,num_baselines)
+            
+    Returns
+    -------
+        freqfill: int array.
+            The nearest unflagged frequency channel for each flagged data point.
+        farr: int array.
+            The frequency channel of flagged data point.
+        rowarr: int array.
+            The baseline index of flagged data point.
+    '''
+    # black magic for finding the nearest unflagged channel
+    num_ch = len(flag)
+    ch_arr = np.linspace(0,num_ch-1,num_ch).astype('int')
+    farr,rowarr = np.where(flag==1) # find the flags
+    # this line is designed to give divided by zero. suppress that specific warning.
+    with np.errstate(invalid='print'):
+        freqfill = np.argmin(
+            np.nan_to_num(
+                np.abs(farr[None,:]-ch_arr[:,None])*(1-flag[:,rowarr])/(1-flag[:,rowarr])
+                ,nan=np.inf
+            ),axis=0
+        )
+    return freqfill,farr,rowarr
+
 
 def sumamp(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',fill=False,verbose=False):
     '''
@@ -74,22 +138,11 @@ def sumamp(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',fill=False,ve
     msset.selectchannel(sel_ch[0],sel_ch[1],sel_ch[2],sel_ch[3])
     metadata = msset.metadata()
     freq_arr = metadata.chanfreqs(0)[sel_ch[1]:sel_ch[1]+sel_ch[0]] # get the frequencies
+    msset.close()
     assert len(freq_arr) == num_ch
     #get all the data needed
-    if verbose:
-        print('Reading data...',datetime.datetime.now().time().strftime("%H:%M:%S"))
-    data = msset.getdata('corrected_data')['corrected_data']
-    uarr = msset.getdata('u')['u']
-    varr = msset.getdata('v')['v']
-    flag = msset.getdata('flag')['flag']
-    msset.close()
-    if verbose:
-        print('Finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
-    #data = data[:,:num_ch,:]
-    #flag = flag[:,:num_ch,:]
-    #z_arr = f_21/freq_arr-1 # redshifts
+    data,uarr,varr,flag = read_ms(submslist[scan_indx],['corrected_data','u','v','flag'],sel_ch,verbose)
     z_0 = 2*f_21/(freq_arr[0]+freq_arr[-1])-1
-    #z_0 = (z_arr[0]+z_arr[-1])/2 # effective redshifts
     lamb_0 = (constants.c/f_21/units.Hz).to('m').value*(1+z_0)
     
     if verbose:
@@ -177,21 +230,11 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',col='correcte
     metadata = msset.metadata()
     freq_arr = metadata.chanfreqs(0)[sel_ch[1]:sel_ch[1]+sel_ch[0]] # get the frequencies
     assert len(freq_arr) == num_ch
-    #get all the data needed
-    if verbose:
-        print('Reading data...',datetime.datetime.now().time().strftime("%H:%M:%S"))
-    data = msset.getdata(col)[col]
-    uarr = msset.getdata('u')['u']
-    varr = msset.getdata('v')['v']
-    flag = msset.getdata('flag')['flag']
     msset.close()
-    if verbose:
-        print('Finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
-    #data = data[:,:num_ch,:]
-    #flag = flag[:,:num_ch,:]
-    #z_arr = f_21/freq_arr-1 # redshifts
+    #get all the data needed
+    data,uarr,varr,flag = read_ms(submslist[scan_indx],[col,'u','v','flag'],sel_ch,verbose)
+    
     z_0 = 2*f_21/(freq_arr[0]+freq_arr[-1])-1
-    #z_0 = (z_arr[0]+z_arr[-1])/2 # effective redshifts
     lamb_0 = (constants.c/f_21/units.Hz).to('m').value*(1+z_0)
     
     if verbose:
@@ -210,17 +253,18 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',col='correcte
     
     if fill:
         for p_indx in pol: # XX and YY
-            farr,rowarr = np.where(flag[p_indx]==1) # find the flags
+            freqfill,farr,rowarr = fill_row(flag[p_indx])
+            #farr,rowarr = np.where(flag[p_indx]==1) # find the flags
             # black magic for finding the nearest unflagged channel
             # this line is designed to give divided by zero. suppress that specific warning.
-            with np.errstate(divide='ignore'):
-                freqfill = np.argmin(
-                    np.nan_to_num(
-                        np.abs(farr[None,:]-ch_arr[:,None])*(1-flag[p_indx][:,rowarr])/(1-flag[p_indx][:,rowarr])
-                        ,nan=np.inf
-                    )
-                    ,axis=0
-                )
+            #with np.errstate(divide='ignore'):
+            #    freqfill = np.argmin(
+            #        np.nan_to_num(
+            #            np.abs(farr[None,:]-ch_arr[:,None])*(1-flag[p_indx][:,rowarr])/(1-flag[p_indx][:,rowarr])
+            #            ,nan=np.inf
+            #        )
+            #        ,axis=0
+            #    )
             data[p_indx,farr,rowarr] = data[p_indx,freqfill,rowarr] 
         flag_I = np.zeros_like(flag_I) # if filled then all the channels are used
     
@@ -375,19 +419,9 @@ def sum_cal(scan_indx,cal_tab,submslist,uvedges,flag_frac,sel_ch,stokes='I',fill
     metadata = msset.metadata()
     freq_arr = metadata.chanfreqs(0)[sel_ch[1]:sel_ch[1]+sel_ch[0]] # get the frequencies
     assert len(freq_arr) == num_ch
-    #get all the data needed
-    if verbose:
-        print('Reading data...',datetime.datetime.now().time().strftime("%H:%M:%S"))
-    ant1 = msset.getdata(["antenna1"])["antenna1"]
-    ant2 = msset.getdata(["antenna2","time"])["antenna2"]
-    timearr = msset.getdata("time")["time"]
-    uarr = msset.getdata('u')['u']
-    varr = msset.getdata('v')['v']
-    flag = msset.getdata('flag')['flag']
     msset.close()
-    if verbose:
-        print('Finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
-    
+    ant1,ant2,timearr,uarr,varr,flag = read_ms(filename,['antenna1','antenna2','time','u','v','flag'],sel_ch,verbose)
+
     data_valerr = np.zeros((4,num_ch,len(uarr))) # based on valErr
     data_splerr = np.zeros((4,num_ch,len(uarr))) # based on spline fitting
     z_0 = 2*f_21/(freq_arr[0]+freq_arr[-1])-1
@@ -446,17 +480,7 @@ def sum_cal(scan_indx,cal_tab,submslist,uvedges,flag_frac,sel_ch,stokes='I',fill
     
     if fill:
         for p_indx in pol: # XX and YY
-            farr,rowarr = np.where(flag[p_indx]==1) # find the flags
-            # black magic for finding the nearest unflagged channel
-            # this line is designed to give divided by zero. suppress that specific warning.
-            with np.errstate(divide='ignore'):
-                freqfill = np.argmin(
-                    np.nan_to_num(
-                        np.abs(farr[None,:]-ch_arr[:,None])*(1-flag[p_indx][:,rowarr])/(1-flag[p_indx][:,rowarr])
-                        ,nan=np.inf
-                    )
-                    ,axis=0
-                )
+            freqfill,farr,rowarr = fill_row(flag[p_indx])
             data_valerr[p_indx,farr,rowarr] = data_valerr[p_indx,freqfill,rowarr] 
             data_splerr[p_indx,farr,rowarr] = data_splerr[p_indx,freqfill,rowarr]
         flag_I = np.zeros_like(flag_I) # if filled then all the channels are used
@@ -556,3 +580,13 @@ def save_cal(i,args):
     if verbose:
         print('Block', block_num,'Scan', scan_id[i],'finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
     return 1
+
+def find_block_id(filename):
+    reex = '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+    result = re.findall(reex,filename)
+    # make sure there is only one block_id in the path
+    assert len(result)==1
+    result = result[0]
+    return result
+
+vfind_id = np.vectorize(find_block_id)
