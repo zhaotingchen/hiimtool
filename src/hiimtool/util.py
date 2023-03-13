@@ -5,6 +5,7 @@ import warnings
 from itertools import product
 import torch
 from torch.fft import fft,fftn,fftfreq
+import re
 #from hiimvis import Specs
 
 def p2dim(p2d):
@@ -298,6 +299,7 @@ def getvis(vis_file,fill,umodeedges):
     varr_i = vv[np.where(indx)]
     return visi_even,visi_odd,counti_even,counti_odd,umode_i,uarr_i,varr_i
 
+
 def calcov_slim(im,split=None,device='cpu'):
     '''
     calculate the covariance of a data set, assuming the first axis is the frequency. Note that the output is complex in case the covariance is calculated with visibility data.
@@ -347,3 +349,13 @@ def calcov_slim(im,split=None,device='cpu'):
         if device != 'cpu': 
             torch.cuda.empty_cache()
     return cov
+
+def find_block_id(filename):
+    reex = '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+    result = re.findall(reex,filename)
+    # make sure there is only one block_id in the path
+    assert len(result)==1
+    result = result[0]
+    return result
+
+vfind_id = np.vectorize(find_block_id)
