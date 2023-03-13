@@ -297,3 +297,53 @@ def getvis(vis_file,fill,umodeedges):
     uarr_i = uu[np.where(indx)]
     varr_i = vv[np.where(indx)]
     return visi_even,visi_odd,counti_even,counti_odd,umode_i,uarr_i,varr_i
+
+def calcov_slim(im,split=None,device='cpu'):
+    '''
+    calculate the covariance of a data set, assuming the first axis is the frequency. Note that the output is complex in case the covariance is calculated with visibility data.
+    
+    Parameters
+    ----------
+        im: numpy array 
+            The image cube or the visibility data set. First axis needs to be the frequency.
+        
+        split: integer
+            The number of subsets to divide the total data into. Useful for calculating with large data cubes with limited memory.
+        
+        device: string, default 'cpu'
+            The device on which the calculation is done. See pytorch documentation for how to set it. 
+
+    Returns
+    -------
+        cov: complex array
+    
+    '''
+    num_ch = im.shape[0]
+    im = im.reshape((num_ch,-1))
+    num_pix = im.shape[1]
+    im = torch.from_numpy(im).to(torch.complex64)
+    
+    if split is None:
+        if device != 'cpu':
+            im = im.to(device)
+        cov = (torch.einsum('ia,ja->ij',im,torch.conj(im))/num_pix**2)
+        cov = cov.cpu().numpy()
+    else:
+        split = int(num_pix/split)
+        cov = torch.zeros((num_ch,num_ch)).to(torch.complex64)
+        im = torch.split(im,split,dim=-1)
+        for i in range(len(im)):
+            #if i%100==0:
+            #    print(i)
+            if device == 'cpu':
+                cov+=torch.einsum('ia,ja->ij',im[i],torch.conj(im[i]))
+            else:
+                im_i = im[i].to(device)
+                cov_i = torch.einsum('ia,ja->ij',im_i,torch.conj(im_i)).to('cpu')
+                cov+=cov_i
+        cov = cov/num_pix**2
+        cov = cov.cpu().numpy()
+        cov_i = 0
+        if device != 'cpu': 
+            torch.cuda.empty_cache()
+    return cov
