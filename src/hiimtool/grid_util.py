@@ -6,6 +6,7 @@ import glob
 from astropy import constants,units
 import datetime
 import re
+import pickle
 
 #fill=True
 #verbose=True
@@ -580,6 +581,120 @@ def save_cal(i,args):
     if verbose:
         print('Block', block_num,'Scan', scan_id[i],'finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
     return 1
+
+def get_rfisum(scan_indx,block_indx,block_id,submslist,save_dir,col,sel_ch,window,flag_frac,verbose):
+    """
+    A function to return a collection of diagnostic statistics for identifying the residual RFI near the horizon.
+    To be expanded.
+    """
+    scan_id = slicer_vectorized(submslist,-7,-3)
+    if verbose:
+        print('Now processing Block '+block_id[block_indx]+' Scan '+scan_id[scan_indx],datetime.datetime.now().time().strftime("%H:%M:%S"))
+    msset = ms()
+    msset.open(submslist[scan_indx])
+    msset.selectchannel(sel_ch[0],sel_ch[1],sel_ch[2],sel_ch[3])
+    metadata = msset.metadata()
+    freq_arr = metadata.chanfreqs(0)[sel_ch[1]:sel_ch[1]+sel_ch[0]] # get the frequencies
+    num_ch = sel_ch[0]
+    msset.close()
+    delta_ch = metadata.chanres(spw=0)[0]
+    data,uarr,varr,flag,timearr,ifr_arr = read_ms(submslist[scan_indx],[col,'u','v','flag','time','ifr_number'],sel_ch,verbose)
+    time_step = np.unique(timearr)
+    ch_arr = np.linspace(0,num_ch-1,num_ch).astype('int')
+    sign_I = np.array([1,1])
+    sign_V = np.array([-1j,1j])
+    z_0 = 2*f_21/(freq_arr[0]+freq_arr[-1])-1
+    lamb_0 = (constants.c/f_21/units.Hz).to('m').value*(1+z_0)
+    uarr /= lamb_0
+    varr /= lamb_0
+    flag_I = (flag[0]+flag[-1])>0  # if XX or YY is flagged then I is flagged 
+    indx_I = flag_I.mean(axis=0)<flag_frac
+    flag_V = (flag[1]+flag[2])>0  # if XX or YY is flagged then I is flagged 
+    indx_V = flag_V.mean(axis=0)<flag_frac
+    flag_I = 0
+    flag_V = 0
+    data_I = np.array([data[0][:,indx_I],data[-1][:,indx_I]])
+    data_V = np.array([data[1][:,indx_V],data[2][:,indx_V]])
+    if verbose:
+        print("Inpainting...",datetime.datetime.now().time().strftime("%H:%M:%S"))
+    for i,p_indx in enumerate((0,3)): # XX and YY
+        freqfill,farr,rowarr = fill_row(flag[p_indx][:,indx_I]) # find the flags
+        data_I[i][farr,rowarr] = data[p_indx][:,indx_I][freqfill,rowarr]
+    for i,p_indx in enumerate((1,2)): # XY and YX
+        freqfill,farr,rowarr = fill_row(flag[p_indx][:,indx_V]) # find the flags
+        data_V[i][farr,rowarr] = data[p_indx][:,indx_V][freqfill,rowarr]
+    if verbose:
+        print("...Finished",datetime.datetime.now().time().strftime("%H:%M:%S"))
+    data_I = (data_I[0]*sign_I[0]+data_I[1]*sign_I[1])/2
+    data_V = (data_V[0]*sign_V[0]+data_V[1]*sign_V[1])/2
+    data = 0
+    V_avg = np.zeros((len(time_step),len(freq_arr)))
+    for time_i in range(len(time_step)):
+        V_avg[time_i] = np.sqrt(np.mean(np.abs(data_V[:,timearr[indx_V]==time_step[time_i]])**2,axis=-1))
+    sigma_ch = np.sqrt((np.abs(data_V)**2).mean(axis=-1))
+    eta_arr = np.fft.fftfreq(220,d=delta_ch) # in seconds
+    eta_arr = np.fft.fftshift(eta_arr)
+    # delay transform
+    testarr_f = np.zeros(num_ch)
+    testarr_f[num_ch//2]=1.0
+    testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
+    testarr_w = (np.fft.fft(testarr*window))
+    renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+    f_len = 220
+    num_sample = 100000
+    test_std = np.fft.fft(np.random.normal(0,sigma_ch[:,None]/np.sqrt(2),(f_len,num_sample))*window[:,None]*np.sqrt(renorm)+1j*np.random.normal(0,sigma_ch[:,None]/np.sqrt(2),(f_len,num_sample))*window[:,None]*np.sqrt(renorm),axis=0).std()
+    sigma_nf = test_std*delta_ch
+    data_If = np.fft.fft(data_I*window[:,None],axis=0)*delta_ch*np.sqrt(renorm)
+    data_If = np.fft.fftshift(data_If,axes=0)
+    data_Vf = np.fft.fft(data_V*window[:,None],axis=0)*delta_ch*np.sqrt(renorm)
+    data_Vf = np.fft.fftshift(data_Vf,axes=0)
+    sigma_Iindx = np.abs(data_If)>(5*sigma_nf)
+    sigma_Vindx = np.abs(data_Vf)>(5*sigma_nf)
+    u0_Iindx = np.abs(uarr[indx_I])<100
+    v0_Iindx = np.abs(varr[indx_I])<100
+    umode = np.sqrt(uarr**2+varr**2)
+    eta_h = 2*umode/(freq_arr[0]+freq_arr[-1])
+    hor_Iindx = (np.abs((np.abs(eta_arr[:,None])-eta_h[indx_I][None,:])/np.abs(eta_h[indx_I][None,:]))<0.3)
+    data_rfi = data_I[:,((hor_Iindx*sigma_Iindx).sum(axis=0)>0)]
+    time_rfi = timearr[indx_I][((hor_Iindx*sigma_Iindx).sum(axis=0)>0)]
+    ifr_rfi = ifr_arr[indx_I][((hor_Iindx*sigma_Iindx).sum(axis=0)>0)]
+    sigma_rfi = sigma_Iindx[:,((hor_Iindx*sigma_Iindx).sum(axis=0)>0)]
+    frac_rfi = sigma_Iindx[:,u0_Iindx].mean(axis=-1)
+    delay_indx = np.where(sigma_rfi.sum(axis=-1)>0)[0]
+    delay_sum = np.zeros_like(delay_indx)
+    for i in range(len(delay_indx)):
+        delay_sum[i] = (hor_Iindx*sigma_Iindx)[delay_indx[i]].sum()
+    delay_hor = delay_indx[delay_sum>0]
+    uarr_rfi = uarr[indx_I][(hor_Iindx*sigma_Iindx).sum(axis=0)>0]
+    varr_rfi = varr[indx_I][(hor_Iindx*sigma_Iindx).sum(axis=0)>0]
+    frac_u0 = sigma_Iindx[:,u0_Iindx].mean(axis=-1)
+    frac_v0 = sigma_Iindx[:,v0_Iindx].mean(axis=-1)
+    sum_dic = ({"block_id":block_id[block_indx],
+               "scan_id":scan_id[scan_indx],
+               "time_step":time_step,
+                "V_avg":V_avg,
+                "sigma_ch":sigma_ch,
+                "frac_u0":frac_u0,
+                "frac_v0":frac_v0,
+                "rfi_sum":sigma_Iindx[hor_Iindx].sum(),
+                "hor_sum":hor_Iindx.sum(),
+                "data_rfi":data_rfi,
+                "time_rfi":time_rfi,
+                "delay_indx":delay_indx,
+                "delay_hor":delay_hor,
+                "sigma_rfi":sigma_rfi,
+                "ifr_rfi":ifr_rfi,
+                "uarr_rfi":uarr_rfi,
+                "varr_rfi":varr_rfi,
+               })
+    for d_i in delay_hor:
+        sum_dic.update({"ifr_d_"+str(d_i):ifr_arr[indx_I][(hor_Iindx*sigma_Iindx)[d_i]]})
+    with open(save_dir+'/'+str(block_indx*100+scan_indx)+'.pkl', 'wb') as file:
+        pickle.dump(sum_dic, file)
+    if verbose:
+        print('Finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
+    return 1
+        
 
 def find_block_id(filename):
     reex = '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
