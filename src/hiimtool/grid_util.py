@@ -346,14 +346,15 @@ def save_scan(i,args):
         1
     '''
     submslist,uvedges,frac,block_num,scratch_dir,sel_ch,stokes,col,fill,verbose = args
-    scan_id = slicer_vectorized(submslist,-7,-3)
+    scan_id = vfindscan(submslist)
+    block_id = vfind_id(submslist)
     if verbose:
-        print('Reading block', block_num,'Scan', scan_id[i],datetime.datetime.now().time().strftime("%H:%M:%S"))
+        print('Reading block', block_id[i],'Scan', scan_id[i],datetime.datetime.now().time().strftime("%H:%M:%S"))
     vis_i, count_i = worker(i,submslist,uvedges,frac,sel_ch,stokes,col=col,fill=fill,verbose=verbose)
-    np.save(scratch_dir+'vis_'+block_num+'_'+scan_id[i]+'_'+stokes,vis_i)
-    np.save(scratch_dir+'count_'+block_num+'_'+scan_id[i]+'_'+stokes,count_i)
+    np.save(scratch_dir+'vis_'+block_id[i]+'_'+scan_id[i]+'_'+stokes,vis_i)
+    np.save(scratch_dir+'count_'+block_id[i]+'_'+scan_id[i]+'_'+stokes,count_i)
     if verbose:
-        print('Block', block_num,'Scan', scan_id[i],'finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
+        print('Block', block_id[i],'Scan', scan_id[i],'finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
     return 1
 
 
@@ -570,15 +571,16 @@ def save_cal(i,args):
         1
     '''
     cal_tab,submslist,uvedges,frac,block_num,scratch_dir,sel_ch,stokes,fill,verbose = args
-    scan_id = slicer_vectorized(submslist,-7,-3)
+    scan_id = vfindscan(submslist)
+    block_id = vfind_id(submslist)
     if verbose:
-        print('Reading block', block_num,'Scan', scan_id[i],datetime.datetime.now().time().strftime("%H:%M:%S"))
+        print('Reading block', block_id[i],'Scan', scan_id[i],datetime.datetime.now().time().strftime("%H:%M:%S"))
     varerr_i,splerr_i,count_i = sum_cal(i,cal_tab,submslist,uvedges,frac,sel_ch,stokes=stokes,fill=fill,verbose=verbose)
-    np.save(scratch_dir+'varerr_'+block_num+'_'+scan_id[i]+'_'+stokes,varerr_i)
-    np.save(scratch_dir+'splerr_'+block_num+'_'+scan_id[i]+'_'+stokes,splerr_i)
-    np.save(scratch_dir+'count_'+block_num+'_'+scan_id[i]+'_'+stokes,count_i)
+    np.save(scratch_dir+'varerr_'+block_id[i]+'_'+scan_id[i]+'_'+stokes,varerr_i)
+    np.save(scratch_dir+'splerr_'+block_id[i]+'_'+scan_id[i]+'_'+stokes,splerr_i)
+    np.save(scratch_dir+'count_'+block_id[i]+'_'+scan_id[i]+'_'+stokes,count_i)
     if verbose:
-        print('Block', block_num,'Scan', scan_id[i],'finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
+        print('Block', block_id[i],'Scan', scan_id[i],'finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
     return 1
 
 def find_block_id(filename):
@@ -590,3 +592,10 @@ def find_block_id(filename):
     return result
 
 vfind_id = np.vectorize(find_block_id)
+
+def findscan(filename):
+    reex = '\.[0-9][0-9][0-9][0-9]\.'
+    result = (re.findall(reex, filename)[0])
+    return result[1:-1]
+
+vfindscan = np.vectorize(findscan)
