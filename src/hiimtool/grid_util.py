@@ -7,6 +7,7 @@ from astropy import constants,units
 import datetime
 import re
 import pickle
+import warnings
 
 #fill=True
 #verbose=True
@@ -140,9 +141,11 @@ def read_ms(filename,keys,sel_ch,verbose=False):
     msset.selectchannel(sel_ch[0],sel_ch[1],sel_ch[2],sel_ch[3])
     data = msset.getdata(keys)
     msset.close()
-    keylist = np.array(list(data.keys()))
-    key_pos = np.where(np.array(keys)[:,None]==keylist[None,:])[-1]
-    data = np.array(list(data.values()))[key_pos]
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=np.VisibleDeprecationWarning)
+        keylist = np.array(list(data.keys()))
+        key_pos = np.where(np.array(keys)[:,None]==keylist[None,:])[-1]
+        data = np.array(list(data.values()))[key_pos]
     if verbose:
         print('Finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
     return data
@@ -170,7 +173,7 @@ def fill_row(flag):
     ch_arr = np.linspace(0,num_ch-1,num_ch).astype('int')
     farr,rowarr = np.where(flag==1) # find the flags
     # this line is designed to give divided by zero. suppress that specific warning.
-    with np.errstate(invalid='print'):
+    with np.errstate(divide='ignore', invalid='ignore'):
         freqfill = np.argmin(
             np.nan_to_num(
                 np.abs(farr[None,:]-ch_arr[:,None])*(1-flag[:,rowarr])/(1-flag[:,rowarr])
