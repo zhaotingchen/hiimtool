@@ -11,6 +11,98 @@ import pickle
 #fill=True
 #verbose=True
 
+class Specs:
+    """
+    Defines the basic specifications of simulation.
+    """
+    def __init__(self, 
+                 cosmo,
+                 freq_start_hz,
+                 num_channels,
+                 deltav_ch,
+                 FWHM_ref,
+                 FWHM_freq_ref,
+                ):
+        self.cosmo = cosmo
+        self.freq_start_hz = freq_start_hz # in Hz
+        self.num_channels = num_channels
+        self.deltav_ch = deltav_ch # in Hz
+        self.FWHM_ref = FWHM_ref
+        self.FWHM_freq_ref = FWHM_freq_ref
+
+        
+    def freq_arr(self):
+        """The observing frequency of each channel"""
+        arr = (self.freq_start_hz + 
+               np.arange(self.num_channels)*self.deltav_ch)
+        return arr
+    
+    def FWHM_arr(self):
+        """The FWHM of each channel"""
+        return self.FWHM_ref*self.FWHM_freq_ref/self.freq_arr()
+    
+    def sigma_arr(self):
+        """The beam radius of each channel"""
+        return self.FWHM_arr()/2/np.sqrt(2*np.log(2))
+    
+    def lamb_arr(self):
+        """The observing wavelength of each channel"""
+        return constants.c.value/self.freq_arr()
+    
+    def z_arr(self):
+        """The observing redshift of each channel"""
+        return f_21 / self.freq_arr() -1
+    
+    def chi_arr(self):
+        """the comoving distance of each channel"""
+        return self.cosmo.comoving_distance(self.z_arr()).value
+    
+    def Hz_arr(self):
+        """The Hubble parameter of each channel"""
+        return self.cosmo.H(self.z_arr()).value
+    
+    def eta_arr(self):
+        """Array of eta from Fourier transform in Hz^-1"""
+        return np.fft.fftfreq(self.num_channels,d=self.deltav_ch)
+    
+    def z_0(self):
+        """The mean redshift of the frequency range"""
+        z_arr = self.z_arr()
+        return (z_arr[0]+z_arr[-1])/2
+    
+    def freq_0(self):
+        """The frequency of the mean redshift"""
+        return f_21/(1+self.z_0())
+    
+    def sigma_0(self):
+        """The beam size corresponding to the mean redshift"""
+        sigma_0 = (self.FWHM_ref*self.FWHM_freq_ref
+                   /self.freq_0()/2/np.sqrt(2*np.log(2)))
+        return sigma_0
+    
+    def X_0(self):
+        """The comoving radial distance at z_0"""
+        return self.cosmo.comoving_distance(self.z_0()).value
+    
+    def Y_0(self):
+        """The los distance per frequency, Mpc/Hz"""
+        z_0 = self.z_0()
+        Y_0 = ((constants.c/self.cosmo.H(z_0)/
+                (f_21*units.Hz)*(1+z_0)**2)).to('Mpc/Hz').value # in Mpc/Hz
+        return Y_0
+    
+    def lambda_0(self):
+        """The wavelength at z_0"""
+        return constants.c.value/self.freq_0()
+    
+    def k_para(self):
+        """The line-of-sight k_para given by 2*pi*eta/Y"""
+        return 2*np.pi*self.eta_arr()/self.Y_0()
+    
+    def k_perp(self,umode):
+        """Calculate the transverse scale corresponding to the u-v radius"""
+        return 2*np.pi*umode/self.X_0()
+
 
 def slicer_vectorized(a,start,end):
     """A function for slicing through numpy arrays with string elements"""
@@ -584,12 +676,12 @@ def save_cal(i,args):
         print('Block', block_id[i],'Scan', scan_id[i],'finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
     return 1
 
-def get_rfisum(scan_indx,block_indx,block_id,submslist,save_dir,col,sel_ch,window,flag_frac,verbose):
+def get_rfisum(scan_indx,block_indx,block_id,submslist,save_dir,col,sel_ch,window,flag_frac,hor_low,hor_high,verbose):
     """
     A function to return a collection of diagnostic statistics for identifying the residual RFI near the horizon.
     To be expanded.
     """
-    scan_id = slicer_vectorized(submslist,-7,-3)
+    scan_id = vfindscan(submslist)
     if verbose:
         print('Now processing Block '+block_id[block_indx]+' Scan '+scan_id[scan_indx],datetime.datetime.now().time().strftime("%H:%M:%S"))
     msset = ms()
@@ -656,7 +748,10 @@ def get_rfisum(scan_indx,block_indx,block_id,submslist,save_dir,col,sel_ch,windo
     v0_Iindx = np.abs(varr[indx_I])<100
     umode = np.sqrt(uarr**2+varr**2)
     eta_h = 2*umode/(freq_arr[0]+freq_arr[-1])
-    hor_Iindx = (np.abs((np.abs(eta_arr[:,None])-eta_h[indx_I][None,:])/np.abs(eta_h[indx_I][None,:]))<0.3)
+    hor_diff = ((np.abs(eta_arr[:,None])-eta_h[indx_I][None,:])
+                /np.abs(eta_h[indx_I][None,:]))
+    hor_Iindx = (hor_diff>=hor_low)*(hor_diff<=hor_high)
+    #hor_Iindx = (np.abs((np.abs(eta_arr[:,None])-eta_h[indx_I][None,:])/np.abs(eta_h[indx_I][None,:]))<0.3)
     data_rfi = data_I[:,((hor_Iindx*sigma_Iindx).sum(axis=0)>0)]
     time_rfi = timearr[indx_I][((hor_Iindx*sigma_Iindx).sum(axis=0)>0)]
     ifr_rfi = ifr_arr[indx_I][((hor_Iindx*sigma_Iindx).sum(axis=0)>0)]
@@ -714,3 +809,86 @@ def findscan(filename):
     return result[1:-1]
 
 vfindscan = np.vectorize(findscan)
+
+def worker_rfi(scan_indx,submslist,uvedges,flag_frac,sel_ch,window,hor_low,hor_high,col='corrected_data',verbose=False):
+    msset = ms()
+    msset.open(submslist[scan_indx])
+    msset.selectchannel(sel_ch[0],sel_ch[1],sel_ch[2],sel_ch[3])
+    metadata = msset.metadata()
+    freq_arr = metadata.chanfreqs(0)[sel_ch[1]:sel_ch[1]+sel_ch[0]]
+    num_ch = sel_ch[0]
+    msset.close()
+    delta_ch = metadata.chanres(spw=0)[0]
+    data,uarr,varr,flag,timearr,ifr_arr = read_ms(submslist[scan_indx],[col,'u','v','flag','time','ifr_number'],sel_ch,verbose)
+    time_step = np.unique(timearr)
+    ch_arr = np.linspace(0,num_ch-1,num_ch).astype('int')
+    sign_I = np.array([1,1])
+    sign_V = np.array([-1j,1j])
+    z_0 = 2*f_21/(freq_arr[0]+freq_arr[-1])-1
+    lamb_0 = (constants.c/f_21/units.Hz).to('m').value*(1+z_0)
+    uarr /= lamb_0
+    varr /= lamb_0
+    flag_I = (flag[0]+flag[-1])>0  # if XX or YY is flagged then I is flagged 
+    indx_I = flag_I.mean(axis=0)<flag_frac
+    flag_V = (flag[1]+flag[2])>0  # if XX or YY is flagged then I is flagged 
+    indx_V = flag_V.mean(axis=0)<flag_frac
+    flag_I = 0
+    flag_V = 0
+    data_I = np.array([data[0][:,indx_I],data[-1][:,indx_I]])
+    data_V = np.array([data[1][:,indx_V],data[2][:,indx_V]])
+    if verbose:
+        print("Inpainting...",datetime.datetime.now().time().strftime("%H:%M:%S"))
+    for i,p_indx in enumerate((0,3)): # XX and YY
+        freqfill,farr,rowarr = fill_row(flag[p_indx][:,indx_I]) # find the flags
+        data_I[i][farr,rowarr] = data[p_indx][:,indx_I][freqfill,rowarr]
+    for i,p_indx in enumerate((1,2)): # XY and YX
+        freqfill,farr,rowarr = fill_row(flag[p_indx][:,indx_V]) # find the flags
+        data_V[i][farr,rowarr] = data[p_indx][:,indx_V][freqfill,rowarr]
+    if verbose:
+        print("...Finished",datetime.datetime.now().time().strftime("%H:%M:%S"))
+    data_I = (data_I[0]*sign_I[0]+data_I[1]*sign_I[1])/2
+    data_V = (data_V[0]*sign_V[0]+data_V[1]*sign_V[1])/2
+    data = 0
+    sigma_ch = np.sqrt((np.abs(data_V)**2).mean(axis=-1))
+    eta_arr = np.fft.fftfreq(220,d=delta_ch) # in seconds
+    eta_arr = np.fft.fftshift(eta_arr)
+    # delay transform
+    testarr_f = np.zeros(num_ch)
+    testarr_f[num_ch//2]=1.0
+    testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
+    testarr_w = (np.fft.fft(testarr*window))
+    renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+    f_len = 220
+    num_sample = 100000
+    test_std = np.fft.fft(
+        (np.random.normal(0,sigma_ch[:,None]/np.sqrt(2),(f_len,num_sample))
+         *window[:,None]*np.sqrt(renorm)
+         +1j*np.random.normal(0,sigma_ch[:,None]/np.sqrt(2),(f_len,num_sample))
+         *window[:,None]*np.sqrt(renorm)),axis=0
+    ).std()
+    sigma_nf = test_std*delta_ch
+    data_If = np.fft.fft(data_I*window[:,None],axis=0)*delta_ch*np.sqrt(renorm)
+    data_If = np.fft.fftshift(data_If,axes=0)
+    sigma_Iindx = np.abs(data_If)>(5*sigma_nf)
+    umode = np.sqrt(uarr**2+varr**2)
+    eta_h = 2*umode/(freq_arr[0]+freq_arr[-1])
+    hor_diff = ((np.abs(eta_arr[:,None])-eta_h[indx_I][None,:])
+                /np.abs(eta_h[indx_I][None,:]))
+    hor_Iindx = (hor_diff>=hor_low)*(hor_diff<=hor_high)
+    #hor_Iindx = (np.abs((np.abs(eta_arr[:,None])-eta_h[indx_I][None,:])/np.abs(eta_h[indx_I][None,:]))<0.4)
+    indx_rfi = ((hor_Iindx*sigma_Iindx).sum(axis=0)==0)
+    vis_gridded = np.zeros((num_ch,len(uvedges)-1,len(uvedges)-1),dtype='complex')
+    count = np.zeros((len(uvedges)-1,len(uvedges)-1)) 
+    for i in range(num_ch):
+        vis_real,_,_ = np.histogram2d(uarr[indx_I][indx_rfi],varr[indx_I][indx_rfi],
+                                  bins=[uvedges,uvedges],
+                                    weights=(data_I[i,indx_rfi].real))
+        vis_imag,_,_ = np.histogram2d(uarr[indx_I][indx_rfi],varr[indx_I][indx_rfi],
+                                  bins=[uvedges,uvedges],
+                                    weights=(data_I[i,indx_rfi].imag))
+        vis_gridded[i] += vis_real+1j*vis_imag
+    count,_,_ = np.histogram2d(uarr[indx_I][indx_rfi],varr[indx_I][indx_rfi],
+                               bins=[uvedges,uvedges],)
+    if verbose:
+        print('Finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
+    return vis_gridded,count
