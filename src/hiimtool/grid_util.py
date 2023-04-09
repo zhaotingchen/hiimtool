@@ -7,6 +7,7 @@ from astropy import constants,units
 import datetime
 import re
 import pickle
+import warnings
 
 #fill=True
 #verbose=True
@@ -140,9 +141,11 @@ def read_ms(filename,keys,sel_ch,verbose=False):
     msset.selectchannel(sel_ch[0],sel_ch[1],sel_ch[2],sel_ch[3])
     data = msset.getdata(keys)
     msset.close()
-    keylist = np.array(list(data.keys()))
-    key_pos = np.where(np.array(keys)[:,None]==keylist[None,:])[-1]
-    data = np.array(list(data.values()))[key_pos]
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=np.VisibleDeprecationWarning)
+        keylist = np.array(list(data.keys()))
+        key_pos = np.where(np.array(keys)[:,None]==keylist[None,:])[-1]
+        data = np.array(list(data.values()))[key_pos]
     if verbose:
         print('Finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
     return data
@@ -170,7 +173,7 @@ def fill_row(flag):
     ch_arr = np.linspace(0,num_ch-1,num_ch).astype('int')
     farr,rowarr = np.where(flag==1) # find the flags
     # this line is designed to give divided by zero. suppress that specific warning.
-    with np.errstate(invalid='print'):
+    with np.errstate(divide='ignore', invalid='ignore'):
         freqfill = np.argmin(
             np.nan_to_num(
                 np.abs(farr[None,:]-ch_arr[:,None])*(1-flag[:,rowarr])/(1-flag[:,rowarr])
@@ -266,7 +269,7 @@ def sumamp(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',fill=False,ve
     return vis_sum,count
     
 
-def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',col='corrected_data',fill=False,verbose=False):
+def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',col='corrected_data',fill=False,verbose=False,ignore_flag=False):
     '''
     Returns the gridded visibility sum and the baseline number counts of a given scan for a ms file.
     Note that the output is **SUMMED** visibility not average!
@@ -300,6 +303,9 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',col='correcte
         
         verbose: Boolean, default False
             Whether to print information about time and which block and scan the function is reading.
+        
+        ignore_flag: Boolean, default False
+            Whether to ignore the flags, useful for not applying flags to the model visibility.
 
     Returns
     -------
@@ -326,6 +332,9 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',col='correcte
     msset.close()
     #get all the data needed
     data,uarr,varr,flag = read_ms(submslist[scan_indx],[col,'u','v','flag'],sel_ch,verbose)
+    
+    if ignore_flag is True:
+        flag = np.zeros_like(flag)
     
     z_0 = 2*f_21/(freq_arr[0]+freq_arr[-1])-1
     lamb_0 = (constants.c/f_21/units.Hz).to('m').value*(1+z_0)
@@ -432,18 +441,20 @@ def save_scan(i,args):
         verbose: Boolean, default False
             Whether to print information about time and which block and scan the function is reading.
         
+        ignore_flag: Boolean, default False
+            Whether to ignore the flags, useful for not applying flags to the model visibility.
         
 
     Returns
     -------
         1
     '''
-    submslist,uvedges,frac,block_num,scratch_dir,sel_ch,stokes,col,fill,verbose = args
+    submslist,uvedges,frac,block_num,scratch_dir,sel_ch,stokes,col,fill,verbose,ignore_flag = args
     scan_id = vfindscan(submslist)
     block_id = vfind_id(submslist)
     if verbose:
         print('Reading block', block_id[i],'Scan', scan_id[i],datetime.datetime.now().time().strftime("%H:%M:%S"))
-    vis_i, count_i = worker(i,submslist,uvedges,frac,sel_ch,stokes,col=col,fill=fill,verbose=verbose)
+    vis_i, count_i = worker(i,submslist,uvedges,frac,sel_ch,stokes,col=col,fill=fill,verbose=verbose,ignore_flag=ignore_flag)
     np.save(scratch_dir+'vis_'+block_id[i]+'_'+scan_id[i]+'_'+stokes,vis_i)
     np.save(scratch_dir+'count_'+block_id[i]+'_'+scan_id[i]+'_'+stokes,count_i)
     if verbose:
