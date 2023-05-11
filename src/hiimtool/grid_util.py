@@ -143,11 +143,9 @@ def read_ms(filename,keys,sel_ch=None,verbose=False):
         msset.selectchannel(sel_ch[0],sel_ch[1],sel_ch[2],sel_ch[3])
     data = msset.getdata(keys)
     msset.close()
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=np.VisibleDeprecationWarning)
-        keylist = np.array(list(data.keys()))
-        key_pos = np.where(np.array(keys)[:,None]==keylist[None,:])[-1]
-        data = np.array(list(data.values()))[key_pos]
+    keylist = np.array(list(data.keys()))
+    key_pos = np.where(np.array(keys)[:,None]==keylist[None,:])[-1]
+    data = np.array(list(data.values()),dtype='object')[key_pos]
     if verbose:
         print('Finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
     return data
@@ -322,16 +320,19 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',col='correcte
         pol = (1,2)
         sign = np.array([-1j,1j])
         
-    num_ch = sel_ch[0]
-    ch_arr = np.linspace(0,num_ch-1,num_ch).astype('int')
     filename = submslist[scan_indx]
     msset = ms()
     msset.open(filename)
-    msset.selectchannel(sel_ch[0],sel_ch[1],sel_ch[2],sel_ch[3])
+    if sel_ch is not None:
+        msset.selectchannel(sel_ch[0],sel_ch[1],sel_ch[2],sel_ch[3])
     metadata = msset.metadata()
-    freq_arr = metadata.chanfreqs(0)[sel_ch[1]:sel_ch[1]+sel_ch[0]] # get the frequencies
-    assert len(freq_arr) == num_ch
+    if sel_ch is not None:
+        freq_arr = metadata.chanfreqs(0)[sel_ch[1]:sel_ch[1]+sel_ch[0]] # get the frequencies
+    else:
+        freq_arr = metadata.chanfreqs(0)
     msset.close()
+    num_ch = len(freq_arr)    
+
     #get all the data needed
     data,uarr,varr,flag = read_ms(submslist[scan_indx],[col,'u','v','flag'],sel_ch,verbose)
     
@@ -358,17 +359,6 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',col='correcte
     if fill:
         for p_indx in pol: # XX and YY
             freqfill,farr,rowarr = fill_row(flag[p_indx])
-            #farr,rowarr = np.where(flag[p_indx]==1) # find the flags
-            # black magic for finding the nearest unflagged channel
-            # this line is designed to give divided by zero. suppress that specific warning.
-            #with np.errstate(divide='ignore'):
-            #    freqfill = np.argmin(
-            #        np.nan_to_num(
-            #            np.abs(farr[None,:]-ch_arr[:,None])*(1-flag[p_indx][:,rowarr])/(1-flag[p_indx][:,rowarr])
-            #            ,nan=np.inf
-            #        )
-            #        ,axis=0
-            #    )
             data[p_indx,farr,rowarr] = data[p_indx,freqfill,rowarr] 
         flag_I = np.zeros_like(flag_I) # if filled then all the channels are used
     
