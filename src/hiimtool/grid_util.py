@@ -8,6 +8,7 @@ import datetime
 import re
 import pickle
 import warnings
+from scipy.ndimage import gaussian_filter
 
 #fill=True
 #verbose=True
@@ -112,7 +113,7 @@ def slicer_vectorized(a,start,end):
 
 f_21 = 1420405751.7667 # in Hz
 
-def read_ms(filename,keys,sel_ch,verbose=False):
+def read_ms(filename,keys,sel_ch=None,verbose=False):
     '''
     A function to read in the measurementset data and returns the values.
     
@@ -138,7 +139,8 @@ def read_ms(filename,keys,sel_ch,verbose=False):
         print('Reading data...',datetime.datetime.now().time().strftime("%H:%M:%S"))
     msset = ms()
     msset.open(filename)
-    msset.selectchannel(sel_ch[0],sel_ch[1],sel_ch[2],sel_ch[3])
+    if sel_ch is not None:
+        msset.selectchannel(sel_ch[0],sel_ch[1],sel_ch[2],sel_ch[3])
     data = msset.getdata(keys)
     msset.close()
     with warnings.catch_warnings():
@@ -737,6 +739,9 @@ def get_rfisum(scan_indx,block_indx,block_id,submslist,save_dir,col,sel_ch,windo
     for time_i in range(len(time_step)):
         V_avg[time_i] = np.sqrt(np.mean(np.abs(data_V[:,timearr[indx_V]==time_step[time_i]])**2,axis=-1))
     sigma_ch = np.sqrt((np.abs(data_V)**2).mean(axis=-1))
+    if np.isnan(sigma_ch).sum()>0:
+        sigma_ch = fill_nan(sigma_ch)
+    
     eta_arr = np.fft.fftfreq(220,d=delta_ch) # in seconds
     eta_arr = np.fft.fftshift(eta_arr)
     # delay transform
@@ -861,6 +866,8 @@ def worker_rfi(scan_indx,submslist,uvedges,flag_frac,sel_ch,window,hor_low,hor_h
     data_V = (data_V[0]*sign_V[0]+data_V[1]*sign_V[1])/2
     data = 0
     sigma_ch = np.sqrt((np.abs(data_V)**2).mean(axis=-1))
+    if np.isnan(sigma_ch).sum()>0:
+        sigma_ch = fill_nan(sigma_ch)
     eta_arr = np.fft.fftfreq(220,d=delta_ch) # in seconds
     eta_arr = np.fft.fftshift(eta_arr)
     # delay transform
@@ -903,3 +910,286 @@ def worker_rfi(scan_indx,submslist,uvedges,flag_frac,sel_ch,window,hor_low,hor_h
     if verbose:
         print('Finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
     return vis_gridded,count
+
+def fill_nan(x_arr,sigma=2,truncate=4):
+    """
+    fill the nan elements of an array with gaussian smoothed interpolation.
+    """
+    x_alt=x_arr.copy()
+    x_alt[np.isnan(x_arr)]=0
+    x_alt=gaussian_filter(x_alt,sigma=sigma,truncate=truncate)
+    x_test=0*x_arr.copy()+1
+    x_test[np.isnan(x_arr)]=0
+    x_test=gaussian_filter(x_test,sigma=sigma,truncate=truncate)
+    x_smooth=x_alt/x_test
+    x_arr[np.isnan(x_arr)]=x_smooth[np.isnan(x_arr)]
+    return x_arr
+
+def sim_worker(scan_indx,submslist,sp,uvedges,flag_frac,vis_hi_pad_1,vis_hi_pad_2,conv_factor,sel_ch=None,col='corrected_data',verbose=False):
+    sign_I = np.array([1,1])
+    sign_V = np.array([-1j,1j])
+    num_ch = sp.num_channels
+    ch_arr = np.linspace(0,num_ch-1,num_ch).astype('int')
+    filename = submslist[scan_indx]
+    msset = ms()
+    msset.open(filename)
+    if sel_ch is not None:
+        msset.selectchannel(sel_ch[0],sel_ch[1],sel_ch[2],sel_ch[3])
+    metadata = msset.metadata()
+    if sel_ch is not None:
+        freq_arr = metadata.chanfreqs(0)[sel_ch[1]:sel_ch[1]+sel_ch[0]] # get the frequencies
+    else:
+        freq_arr = metadata.chanfreqs(0)[:num_ch]
+    msset.close()
+    assert len(freq_arr) == num_ch
+    #get all the data needed
+    data,uarr,varr,flag = read_ms(submslist[scan_indx],[col,'u','v','flag'],sel_ch,verbose)
+    data = data[:,:num_ch,:]
+    flag = flag[:,:num_ch,:]
+    z_0 = 2*f_21/(freq_arr[0]+freq_arr[-1])-1
+    lamb_0 = (constants.c/f_21/units.Hz).to('m').value*(1+z_0)
+    uarr /= lamb_0
+    varr /= lamb_0
+    delta_ch = sp.deltav_ch
+    ch_arr = np.linspace(0,num_ch-1,num_ch).astype('int')
+    flag_I = (flag[0]+flag[-1])>0  # if XX or YY is flagged then I is flagged 
+    indx_I = flag_I.mean(axis=0)<flag_frac
+    if indx_I.sum()==0:
+        return 0.0,0.0,0.0,0.0,0.0,0.0
+    flag_V = (flag[1]+flag[2])>0  # if XX or YY is flagged then I is flagged 
+    indx_V = flag_V.mean(axis=0)<flag_frac
+    #data_I = np.array([data[0][:,indx_I],data[-1][:,indx_I]])
+    data_V = np.array([data[1][:,indx_V],data[2][:,indx_V]])
+    tmp_V = ((data_V[0]*sign_V[0]+data_V[1]*sign_V[1])/2)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        sigma_ch = np.sqrt((np.sum(np.abs(tmp_V)**2*(1-flag_V[:,indx_V]),axis=-1)/np.sum((1-flag_V[:,indx_V]),axis=-1)))
+    if np.isnan(sigma_ch).sum()>0:
+        freqfill,farr,rowarr = fill_row(np.isnan(sigma_ch)[:,None])
+        sigma_ch[farr] = sigma_ch[freqfill]
+    kpara_arr = 2*np.pi*sp.eta_arr()/sp.Y_0()
+    uarr = uarr[indx_I]
+    varr = varr[indx_I]
+    kperp_arr = 2*np.pi*np.sqrt(uarr**2+varr**2)/sp.X_0()
+    grid_pos = np.array([(uarr[:,None]>=uvedges[None,:]).sum(axis=-1),
+                         (varr[:,None]>=uvedges[None,:]).sum(axis=-1)]).T
+    data_hi_1 = vis_hi_pad_1[:,grid_pos[:,0],grid_pos[:,1]]
+    data_hi_2 = vis_hi_pad_2[:,grid_pos[:,0],grid_pos[:,1]]
+    #phi_arr = phicy(kpara_arr,kperp_arr).T
+    #amp_f = np.sqrt(phi_arr/conv_factor/delta_ch**2/1e6) 
+    #data_hif = (np.random.normal(0,amp_f/np.sqrt(2),amp_f.shape)
+    #        +1j*np.random.normal(0,amp_f/np.sqrt(2),amp_f.shape))
+    #data_hi_1 = np.fft.ifft(data_hif,axis=0)
+    #data_hif = (np.random.normal(0,amp_f/np.sqrt(2),amp_f.shape)
+    #        +1j*np.random.normal(0,amp_f/np.sqrt(2),amp_f.shape))
+    #data_hi_2 = np.fft.ifft(data_hif,axis=0)
+    data_shape = (len(sigma_ch),len(uarr))
+    
+    data_tn_1 = (np.random.normal(0,sigma_ch[:,None],data_shape)
+                 +1j*np.random.normal(0,sigma_ch[:,None],data_shape))
+    data_tn_2 = (np.random.normal(0,sigma_ch[:,None],data_shape)
+                 +1j*np.random.normal(0,sigma_ch[:,None],data_shape))
+    data_tn_f = [data_tn_1.copy(),data_tn_2.copy()]
+    data_hi_f = [data_hi_1.copy(),data_hi_2.copy()]
+    for i,p_indx in enumerate((0,3)): # XX and YY
+        freqfill,farr,rowarr = fill_row(flag[p_indx][:,indx_I])
+        data_hi_f[i][farr,rowarr] = data_hi_f[i][freqfill,rowarr]
+        data_tn_f[i][farr,rowarr] = data_tn_f[i][freqfill,rowarr]
+    data_hi_f = (data_hi_f[0]+data_hi_f[1])/2
+    data_tn_f = (data_tn_f[0]+data_tn_f[1])/2
+    data_hi_nf = (data_hi_1+data_hi_2)/2
+    data_tn_nf = (data_tn_1+data_tn_2)/2
+    flag_I = flag_I[:,indx_I]
+    vis_hi_nf,count_nf = grid_vis(uarr,varr,uvedges,data_hi_nf,flag_I,False)
+    vis_hi_f,count_f = grid_vis(uarr,varr,uvedges,data_hi_f,np.zeros_like(flag_I),True)
+    vis_tn_nf,count_nf = grid_vis(uarr,varr,uvedges,data_tn_nf,flag_I,False)
+    vis_tn_f,count_f = grid_vis(uarr,varr,uvedges,data_tn_f,np.zeros_like(flag_I),True)
+    return vis_hi_nf,vis_hi_f,vis_tn_nf,vis_tn_f,count_nf,count_f
+
+def save_sim(i,args):
+    submslist,sp,uvedges,flag_frac,vis_hi_pad_1,vis_hi_pad_2,conv_factor,sel_ch,col,verbose,scratch_dir = args
+    scan_id = vfindscan(submslist)
+    block_id = vfind_id(submslist)
+    if verbose:
+        print('Reading block', block_id[i],'Scan', scan_id[i],datetime.datetime.now().time().strftime("%H:%M:%S"))
+    vis_hi_nf,vis_hi_f,vis_tn_nf,vis_tn_f,count_nf,count_f = sim_worker(i,submslist,sp,uvedges,flag_frac,vis_hi_pad_1, vis_hi_pad_2,conv_factor,sel_ch=sel_ch,col=col,verbose=verbose)
+    np.save(scratch_dir+'vis_hi_'+block_id[i]+'_'+scan_id[i]+'_'+'fill_True',vis_hi_f)
+    np.save(scratch_dir+'vis_hi_'+block_id[i]+'_'+scan_id[i]+'_'+'fill_False',vis_hi_nf)
+    np.save(scratch_dir+'vis_tn_'+block_id[i]+'_'+scan_id[i]+'_'+'fill_True',vis_tn_f)
+    np.save(scratch_dir+'vis_tn_'+block_id[i]+'_'+scan_id[i]+'_'+'fill_False',vis_tn_nf)
+    np.save(scratch_dir+'count_'+block_id[i]+'_'+scan_id[i]+'_'+'fill_False',count_nf)
+    np.save(scratch_dir+'count_'+block_id[i]+'_'+scan_id[i]+'_'+'fill_True',count_f)
+    if verbose:
+        print('Block', block_id[i],'Scan', scan_id[i],'finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
+    return 1
+
+def grid_vis(uarr,varr,uvedges,data,flag,fill):
+    num_ch = len(data)
+    vis_gridded = np.zeros((num_ch,len(uvedges)-1,len(uvedges)-1),dtype='complex')
+    if fill:
+        count = np.zeros((len(uvedges)-1,len(uvedges)-1)) 
+    else:
+        count = np.zeros((num_ch,len(uvedges)-1,len(uvedges)-1))
+    for i in range(num_ch):
+        vis_real,_,_ = np.histogram2d(uarr,varr,bins=[uvedges,uvedges],
+                                      weights=(data[i].real)*(1-flag[i]))
+        vis_imag,_,_ = np.histogram2d(uarr,varr,bins=[uvedges,uvedges],
+                                      weights=(data[i].imag)*(1-flag[i]))
+        vis_gridded[i] += vis_real+1j*vis_imag
+        if fill:
+            continue
+        else:
+            count[i],_,_ = np.histogram2d(uarr,varr,bins=[uvedges,uvedges],weights=(1-flag[i]))
+    if fill:
+        count,_,_ = np.histogram2d(uarr,varr,bins=[uvedges,uvedges],)
+    return vis_gridded,count
+
+
+def sim_realization(i,args):
+    scratch_dir,submslist,sp,uvedges,flag_frac,vis_hi_dir,num_sim,sel_ch,col,verbose=args
+    scan_id = vfindscan(submslist)
+    block_id = vfind_id(submslist)
+    if verbose:
+        print('Reading block', block_id[i],'Scan', scan_id[i],datetime.datetime.now().time().strftime("%H:%M:%S"))
+    sign_I = np.array([1,1])
+    sign_V = np.array([-1j,1j])
+    num_ch = sp.num_channels
+    ch_arr = np.linspace(0,num_ch-1,num_ch).astype('int')
+    filename = submslist[i]
+    msset = ms()
+    msset.open(filename)
+    if sel_ch is not None:
+        msset.selectchannel(sel_ch[0],sel_ch[1],sel_ch[2],sel_ch[3])
+    metadata = msset.metadata()
+    if sel_ch is not None:
+        freq_arr = metadata.chanfreqs(0)[sel_ch[1]:sel_ch[1]+sel_ch[0]] # get the frequencies
+    else:
+        freq_arr = metadata.chanfreqs(0)[:num_ch]
+    msset.close()
+    assert len(freq_arr) == num_ch
+    #get all the data needed
+    data,uarr,varr,flag = read_ms(submslist[i],[col,'u','v','flag'],sel_ch,verbose)
+    data = data[:,:num_ch,:]
+    flag = flag[:,:num_ch,:]
+    z_0 = 2*f_21/(freq_arr[0]+freq_arr[-1])-1
+    lamb_0 = (constants.c/f_21/units.Hz).to('m').value*(1+z_0)
+    uarr /= lamb_0
+    varr /= lamb_0
+    delta_ch = sp.deltav_ch
+    ch_arr = np.linspace(0,num_ch-1,num_ch).astype('int')
+    flag_I = (flag[0]+flag[-1])>0  # if XX or YY is flagged then I is flagged 
+    indx_I = flag_I.mean(axis=0)<flag_frac
+    if indx_I.sum()==0:
+        print("All baselines flagged for "+block_id[i] +' scan '+scan_id[i])
+        for real_id in range(num_sim):
+            np.save(scratch_dir+'vis_hi_'+block_id[i]+'_'+scan_id[i]+'_'+'fill_True_'+('%03i'%real_id),0.0+0.0j)
+            np.save(scratch_dir+'vis_hi_'+block_id[i]+'_'+scan_id[i]+'_'+'fill_False_'+('%03i'%real_id),0.0+0.0j)
+            np.save(scratch_dir+'vis_tn_'+block_id[i]+'_'+scan_id[i]+'_'+'fill_True_'+('%03i'%real_id),0.0+0.0j)
+            np.save(scratch_dir+'vis_tn_'+block_id[i]+'_'+scan_id[i]+'_'+'fill_False_'+('%03i'%real_id),0.0+0.0j)
+            np.save(scratch_dir+'count_'+block_id[i]+'_'+scan_id[i]+'_'+'fill_False_'+('%03i'%real_id),0.0)
+            np.save(scratch_dir+'count_'+block_id[i]+'_'+scan_id[i]+'_'+'fill_True_'+('%03i'%real_id),0.0)
+        return 1.0
+    flag_V = (flag[1]+flag[2])>0  # if XX or YY is flagged then I is flagged 
+    indx_V = flag_V.mean(axis=0)<flag_frac
+    #data_I = np.array([data[0][:,indx_I],data[-1][:,indx_I]])
+    data_V = np.array([data[1][:,indx_V],data[2][:,indx_V]])
+    tmp_V = ((data_V[0]*sign_V[0]+data_V[1]*sign_V[1])/2)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        sigma_ch = np.sqrt((np.sum(np.abs(tmp_V)**2*(1-flag_V[:,indx_V]),axis=-1)/np.sum((1-flag_V[:,indx_V]),axis=-1)))
+    if np.isnan(sigma_ch).sum()>0:
+        freqfill,farr,rowarr = fill_row(np.isnan(sigma_ch)[:,None])
+        sigma_ch[farr] = sigma_ch[freqfill]
+    kpara_arr = 2*np.pi*sp.eta_arr()/sp.Y_0()
+    uarr = uarr[indx_I]
+    varr = varr[indx_I]
+    kperp_arr = 2*np.pi*np.sqrt(uarr**2+varr**2)/sp.X_0()
+    grid_pos = np.array([(uarr[:,None]>=uvedges[None,:]).sum(axis=-1),
+                         (varr[:,None]>=uvedges[None,:]).sum(axis=-1)]).T
+    freqfill_XX,farr_XX,rowarr_XX = fill_row(flag[0][:,indx_I])
+    freqfill_YY,farr_YY,rowarr_YY = fill_row(flag[3][:,indx_I])
+    data_shape = (len(sigma_ch),len(uarr))
+    flag_I = flag_I[:,indx_I]
+    for real_id in range(num_sim):
+        #print(real_id,datetime.datetime.now().time().strftime("%H:%M:%S"))
+        vis_hi_pad_1 = np.load(vis_hi_dir+'vishipad1_'+('%03i'%real_id)+'.npy')
+        vis_hi_pad_2 = np.load(vis_hi_dir+'vishipad2_'+('%03i'%real_id)+'.npy')
+        data_hi_1 = vis_hi_pad_1[:,grid_pos[:,0],grid_pos[:,1]]
+        data_hi_2 = vis_hi_pad_2[:,grid_pos[:,0],grid_pos[:,1]]
+        data_tn_1 = (np.random.normal(0,sigma_ch[:,None],data_shape)
+                 +1j*np.random.normal(0,sigma_ch[:,None],data_shape))
+        data_tn_2 = (np.random.normal(0,sigma_ch[:,None],data_shape)
+                 +1j*np.random.normal(0,sigma_ch[:,None],data_shape))
+        data_tn_f = [data_tn_1.copy(),data_tn_2.copy()]
+        data_hi_f = [data_hi_1.copy(),data_hi_2.copy()]
+    #for i,p_indx in enumerate((0,3)): # XX and YY
+        #freqfill,farr,rowarr = fill_row(flag[p_indx][:,indx_I])
+        data_hi_f[0][farr_XX,rowarr_XX] = data_hi_f[0][freqfill_XX,rowarr_XX]
+        data_hi_f[1][farr_YY,rowarr_YY] = data_hi_f[1][freqfill_YY,rowarr_YY]
+        data_tn_f[0][farr_XX,rowarr_XX] = data_tn_f[0][freqfill_XX,rowarr_XX]
+        data_tn_f[1][farr_YY,rowarr_YY] = data_tn_f[1][freqfill_YY,rowarr_YY]
+        data_hi_f = (data_hi_f[0]+data_hi_f[1])/2
+        data_tn_f = (data_tn_f[0]+data_tn_f[1])/2
+        data_hi_nf = (data_hi_1+data_hi_2)/2
+        data_tn_nf = (data_tn_1+data_tn_2)/2
+        vis_hi_nf,count_nf = grid_vis(uarr,varr,uvedges,data_hi_nf,flag_I,False)
+        vis_hi_f,count_f = grid_vis(uarr,varr,uvedges,data_hi_f,np.zeros_like(flag_I),True)
+        vis_tn_nf,count_nf = grid_vis(uarr,varr,uvedges,data_tn_nf,flag_I,False)
+        vis_tn_f,count_f = grid_vis(uarr,varr,uvedges,data_tn_f,np.zeros_like(flag_I),True)
+        np.save(scratch_dir+'vis_hi_'+block_id[i]+'_'+scan_id[i]+'_'+'fill_True_'+('%03i'%real_id),vis_hi_f)
+        np.save(scratch_dir+'vis_hi_'+block_id[i]+'_'+scan_id[i]+'_'+'fill_False_'+('%03i'%real_id),vis_hi_nf)
+        np.save(scratch_dir+'vis_tn_'+block_id[i]+'_'+scan_id[i]+'_'+'fill_True_'+('%03i'%real_id),vis_tn_f)
+        np.save(scratch_dir+'vis_tn_'+block_id[i]+'_'+scan_id[i]+'_'+'fill_False_'+('%03i'%real_id),vis_tn_nf)
+        np.save(scratch_dir+'count_'+block_id[i]+'_'+scan_id[i]+'_'+'fill_False_'+('%03i'%real_id),count_nf)
+        np.save(scratch_dir+'count_'+block_id[i]+'_'+scan_id[i]+'_'+'fill_True_'+('%03i'%real_id),count_f)
+    if verbose:
+        print('Finished Block', block_id[i],'Scan', scan_id[i],datetime.datetime.now().time().strftime("%H:%M:%S"))
+    return 1
+
+def sum_scan_sim(real_id,args):
+    num_ch,uvedges,scan_id,scratch_dir,save_dir,block=args
+    vis_hi_even_f = np.zeros((num_ch,len(uvedges)-1,len(uvedges)-1),dtype='complex')
+    vis_hi_odd_f = np.zeros((num_ch,len(uvedges)-1,len(uvedges)-1),dtype='complex')
+    vis_tn_even_f = np.zeros((num_ch,len(uvedges)-1,len(uvedges)-1),dtype='complex')
+    vis_tn_odd_f = np.zeros((num_ch,len(uvedges)-1,len(uvedges)-1),dtype='complex')
+    vis_hi_even_nf = np.zeros((num_ch,len(uvedges)-1,len(uvedges)-1),dtype='complex')
+    vis_hi_odd_nf = np.zeros((num_ch,len(uvedges)-1,len(uvedges)-1),dtype='complex')
+    vis_tn_even_nf = np.zeros((num_ch,len(uvedges)-1,len(uvedges)-1),dtype='complex')
+    vis_tn_odd_nf = np.zeros((num_ch,len(uvedges)-1,len(uvedges)-1),dtype='complex')
+    count_even_f = np.zeros((len(uvedges)-1,len(uvedges)-1))
+    count_odd_f = np.zeros((len(uvedges)-1,len(uvedges)-1))
+    count_even_nf = np.zeros((num_ch,len(uvedges)-1,len(uvedges)-1))
+    count_odd_nf = np.zeros((num_ch,len(uvedges)-1,len(uvedges)-1))
+    for scan in scan_id:
+        vis_hi_i_f = np.load(scratch_dir+'vis_hi_'+block+'_'+scan+'_fill_True_'+('%03i'%real_id)+'.npy')
+        vis_hi_i_nf = np.load(scratch_dir+'vis_hi_'+block+'_'+scan+'_fill_False_'+('%03i'%real_id)+'.npy')
+        vis_tn_i_f = np.load(scratch_dir+'vis_tn_'+block+'_'+scan+'_fill_True_'+('%03i'%real_id)+'.npy')
+        vis_tn_i_nf = np.load(scratch_dir+'vis_tn_'+block+'_'+scan+'_fill_False_'+('%03i'%real_id)+'.npy')
+        count_i_f = np.load(scratch_dir+'count_'+block+'_'+scan+'_fill_True_'+('%03i'%real_id)+'.npy')
+        count_i_nf = np.load(scratch_dir+'count_'+block+'_'+scan+'_fill_False_'+('%03i'%real_id)+'.npy')
+        if int(scan)%2 == 0:
+            vis_hi_even_f+=vis_hi_i_f
+            vis_hi_even_nf+=vis_hi_i_nf
+            vis_tn_even_f+=vis_tn_i_f
+            vis_tn_even_nf+=vis_tn_i_nf
+            count_even_f+=count_i_f
+            count_even_nf+=count_i_nf
+        else:
+            vis_hi_odd_f+=vis_hi_i_f
+            vis_hi_odd_nf+=vis_hi_i_nf
+            vis_tn_odd_f+=vis_tn_i_f
+            vis_tn_odd_nf+=vis_tn_i_nf
+            count_odd_f+=count_i_f
+            count_odd_nf+=count_i_nf
+    np.save(save_dir+('%03i'%real_id)+'/'+'vissum_hi_'+block+'_fill_True_odd',vis_hi_odd_f)
+    np.save(save_dir+('%03i'%real_id)+'/'+'vissum_hi_'+block+'_fill_True_even',vis_hi_even_f)
+    np.save(save_dir+('%03i'%real_id)+'/'+'vissum_hi_'+block+'_fill_False_odd',vis_hi_odd_nf)
+    np.save(save_dir+('%03i'%real_id)+'/'+'vissum_hi_'+block+'_fill_False_even',vis_hi_even_nf)
+    np.save(save_dir+('%03i'%real_id)+'/'+'vissum_tn_'+block+'_fill_True_odd',vis_tn_odd_f)
+    np.save(save_dir+('%03i'%real_id)+'/'+'vissum_tn_'+block+'_fill_True_even',vis_tn_even_f)
+    np.save(save_dir+('%03i'%real_id)+'/'+'vissum_tn_'+block+'_fill_False_odd',vis_tn_odd_nf)
+    np.save(save_dir+('%03i'%real_id)+'/'+'vissum_tn_'+block+'_fill_False_even',vis_tn_even_nf)
+    
+    np.save(save_dir+('%03i'%real_id)+'/'+'count_'+block+'_fill_True_odd',count_odd_f)
+    np.save(save_dir+('%03i'%real_id)+'/'+'count_'+block+'_fill_True_even',count_even_f)
+    np.save(save_dir+('%03i'%real_id)+'/'+'count_'+block+'_fill_False_odd',count_odd_nf)
+    np.save(save_dir+('%03i'%real_id)+'/'+'count_'+block+'_fill_False_even',count_even_nf)
+    return 1
