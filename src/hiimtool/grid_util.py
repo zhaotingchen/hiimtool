@@ -803,7 +803,7 @@ def find_block_id(filename):
     reex = '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
     result = re.findall(reex,filename)
     # make sure there is only one block_id in the path
-    assert len(result)==1
+    assert result.count(result[0]) == len(result)
     result = result[0]
     return result
 
