@@ -4,6 +4,7 @@ The common utility files that does not require any installation of `torch` or `c
 import numpy as np
 from astropy import constants,units
 import re
+from scipy.ndimage import gaussian_filter
 
 f_21 = 1420405751.7667 # in Hz
 
