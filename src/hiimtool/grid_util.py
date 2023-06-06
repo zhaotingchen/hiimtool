@@ -9,9 +9,34 @@ import re
 import pickle
 import warnings
 from scipy.ndimage import gaussian_filter
+from scipy.optimize import fmin
+from scipy.signal import blackmanharris
 
-#fill=True
-#verbose=True
+def chisq(pars,func,xarr,yarr,yerr):
+    #fitfunc,xarr,yarr,yerr = args
+    fitarr = func(xarr,pars)
+    return 0.5*np.sum((fitarr-yarr)**2/yerr**2)
+
+def fitfunc(xarr,pars):
+    '''
+    (a|x|+1)*exp(-|x|/b)+c
+    '''
+    a,b,c = pars
+    xarr = np.abs(xarr)
+    return np.exp(-(xarr/b)**a)*(1-c)+c
+
+def sort_ifr(time,ant1,ant2):
+    '''
+    Manually sort the ms data into shapes of (num_time,num_ifr)
+    '''
+    time_step = np.unique(time)
+    ant_id = np.unique(np.append(ant1,ant2))
+    ifr_num = ant1*1000+ant2
+    dt_min = np.diff(time_step[np.argsort(time_step)]).min()
+    sort_arr = time+ dt_min*ifr_num/(ifr_num.max()+1)
+    sort_indx = np.argsort(sort_arr)
+    return sort_indx,len(time_step),int(len(ant_id)*(len(ant_id)-1)/2)
+
 
 class Specs:
     """
@@ -113,7 +138,7 @@ def slicer_vectorized(a,start,end):
 
 f_21 = 1420405751.7667 # in Hz
 
-def read_ms(filename,keys,sel_ch=None,verbose=False):
+def read_ms(filename,keys,sel_ch=None,verbose=False,ifraxis=False):
     '''
     A function to read in the measurementset data and returns the values.
     
@@ -141,7 +166,7 @@ def read_ms(filename,keys,sel_ch=None,verbose=False):
     msset.open(filename)
     if sel_ch is not None:
         msset.selectchannel(sel_ch[0],sel_ch[1],sel_ch[2],sel_ch[3])
-    data = msset.getdata(keys)
+    data = msset.getdata(keys,ifraxis=ifraxis)
     msset.close()
     keylist = np.array(list(data.keys()))
     key_pos = np.where(np.array(keys)[:,None]==keylist[None,:])[-1]
@@ -1030,7 +1055,8 @@ def grid_vis(uarr,varr,uvedges,data,flag,fill):
         else:
             count[i],_,_ = np.histogram2d(uarr,varr,bins=[uvedges,uvedges],weights=(1-flag[i]))
     if fill:
-        count,_,_ = np.histogram2d(uarr,varr,bins=[uvedges,uvedges],)
+        # if fill, flags are consistent across frequencies
+        count,_,_ = np.histogram2d(uarr,varr,bins=[uvedges,uvedges],weights=(1-flag[0]))
     return vis_gridded,count
 
 
@@ -1183,3 +1209,142 @@ def sum_scan_sim(real_id,args):
     np.save(save_dir+('%03i'%real_id)+'/'+'count_'+block+'_fill_False_odd',count_odd_nf)
     np.save(save_dir+('%03i'%real_id)+'/'+'count_'+block+'_fill_False_even',count_even_nf)
     return 1
+
+
+def worker_grid(ms_indx,submslist,uvedges,flag_frac,delay_sigma=5,sel_ch=None,col='corrected_data',verbose=False,save=False,scratch_dir='./',start_ch=0,num_ch=None,taper=blackmanharris):
+    sign_I = np.array([1,1])
+    sign_V = np.array([-1j,1j])
+    scan_id = vfindscan(submslist)
+    block_id = vfind_id(submslist)
+    block = block_id[ms_indx]
+    scan = scan_id[ms_indx]
+    if verbose:
+        print('Reading block', block,'Scan',scan,
+              datetime.datetime.now().time().strftime("%H:%M:%S"))
+    data,fg_data,uarr,varr,flag,timearr,ant1,ant2,axis_info = read_ms(
+        submslist[ms_indx],
+        [col,'model_data','u','v','flag','time','antenna1','antenna2','axis_info'],
+        sel_ch,verbose,False
+    )
+    freq_arr = axis_info['freq_axis']['chan_freq'].ravel()
+    if num_ch is None:
+        num_ch = len(freq_arr)
+    freq_arr = freq_arr[start_ch:(start_ch+num_ch)]
+    data = data[:,start_ch:(start_ch+num_ch),:]
+    fg_data = fg_data[:,start_ch:(start_ch+num_ch),:]
+    flag = flag[:,start_ch:(start_ch+num_ch),:]
+    time_step = np.unique(timearr)
+    ant_id = np.unique(np.append(ant1,ant2))
+    assert (ant_id.size*(ant_id.size-1)/2)*time_step.size == flag.shape[-1]
+    ifr_num = ant1*1000+ant2
+    ch_arr = np.linspace(0,num_ch-1,num_ch).astype('int')
+    dt_min = np.diff(time_step[np.argsort(time_step)]).min()
+    sort_indx,tshape,antshape = sort_ifr(timearr,ant1,ant2)
+    timearr = timearr[sort_indx].reshape((tshape,antshape))
+    uarr = uarr[sort_indx].reshape((tshape,antshape))
+    varr = varr[sort_indx].reshape((tshape,antshape))
+    flag = flag[:,:,sort_indx].reshape((len(flag),num_ch,tshape,antshape))
+    data = data[:,:,sort_indx].reshape((len(data),num_ch,tshape,antshape))
+    fg_data = fg_data[:,:,sort_indx].reshape((len(fg_data),num_ch,tshape,antshape))
+    ant1 = ant1[sort_indx].reshape((tshape,antshape))
+    ant2 = ant2[sort_indx].reshape((tshape,antshape))
+    z_0 = 2*f_21/(freq_arr[0]+freq_arr[-1])-1
+    lamb_0 = (constants.c/f_21/units.Hz).to('m').value*(1+z_0)
+    uarr /= lamb_0
+    varr /= lamb_0
+    flag_I = (flag[0]+flag[-1])>0 
+    indx_I = flag_I.mean(axis=0)<flag_frac
+    if indx_I.sum()==0:
+        if verbose:
+            print('block', block,'Scan',scan,'fully flagged',
+              datetime.datetime.now().time().strftime("%H:%M:%S"))
+        if save:
+            np.save(scratch_dir+'vis_'+block+'_'+scan,0.0+0.0j)
+            np.save(scratch_dir+'count_'+block+'_'+scan,0.0)
+        return 0.0+0.0j,0.0
+    flag_V = (flag[1]+flag[2])>0  # if XX or YY is flagged then I is flagged 
+    indx_V = flag_V.mean(axis=0)<flag_frac
+    if verbose:
+        print('Inpainting...',
+              datetime.datetime.now().time().strftime("%H:%M:%S"))
+    for i,p_indx in enumerate((0,3)): # XX and YY
+        freqfill,farr,rowarr = fill_row(flag[p_indx][:,indx_I]) # find the flags
+        data[p_indx][:,indx_I][farr,rowarr] = data[p_indx][:,indx_I][freqfill,rowarr]
+        fg_data[p_indx][:,indx_I][farr,rowarr] = fg_data[p_indx][:,indx_I][freqfill,rowarr]
+    for i,p_indx in enumerate((1,2)): # XY and YX
+        freqfill,farr,rowarr = fill_row(flag[p_indx][:,indx_V]) # find the flags
+        data[p_indx][:,indx_V][farr,rowarr] = data[p_indx][:,indx_V][freqfill,rowarr]
+    data_I = ((data[0]*sign_I[0]+data[-1]*sign_I[1])/2)
+    data_V = ((data[1]*sign_V[0]+data[2]*sign_V[1])/2)
+    fg_I = ((fg_data[0]*sign_I[0]+fg_data[-1]*sign_I[1])/2)
+    del data,fg_data
+    if verbose:
+        print('...finished',
+              datetime.datetime.now().time().strftime("%H:%M:%S"))
+    #sigma_ch = np.std(data_V[:,indx_V],axis=-1)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        sigma_ch = np.sqrt((np.sum(np.abs(data_V[:,indx_V])**2*(1-flag_V[:,indx_V]),axis=-1)/np.sum((1-flag_V[:,indx_V]),axis=-1)))
+    if np.isnan(sigma_ch).sum()>0:
+        freqfill,farr,rowarr = fill_row(np.isnan(sigma_ch)[:,None])
+        sigma_ch[farr] = sigma_ch[freqfill]
+    window = taper(num_ch)
+    delta_ch = np.diff(freq_arr).mean()
+    eta_arr = np.fft.fftfreq(num_ch,d=delta_ch) # in seconds
+    eta_arr = np.fft.fftshift(eta_arr)
+    # delay transform
+    testarr_f = np.zeros(num_ch)
+    testarr_f[num_ch//2]=1.0
+    testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
+    testarr_w = (np.fft.fft(testarr*window))
+    renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+    f_len = num_ch
+    num_sample = 100000
+    test_std = np.fft.fft(
+        (np.random.normal(0,sigma_ch[:,None]/np.sqrt(2),(f_len,num_sample))
+         *window[:,None]*np.sqrt(renorm)
+         +1j*np.random.normal(0,sigma_ch[:,None]/np.sqrt(2),(f_len,num_sample))
+         *window[:,None]*np.sqrt(renorm)),axis=0
+    ).std()
+    sigma_nf = test_std*delta_ch
+    data_If = np.fft.fft(data_I*window[:,None,None],axis=0)*delta_ch*np.sqrt(renorm)
+    data_If = np.fft.fftshift(data_If,axes=0)
+    fg_If = np.fft.fft(fg_I*window[:,None,None],axis=0)*delta_ch*np.sqrt(renorm)
+    fg_If = np.fft.fftshift(fg_If,axes=0)
+    weight_If = np.zeros(data_If.shape)
+    weight_If[:,indx_I] = 1
+    with np.errstate(divide='ignore', invalid='ignore'):
+        cov_diag_data = ((np.abs(data_If*weight_If)**2).sum(axis=1)/(np.abs(weight_If)**2).sum(axis=1)).T
+        cov_diag_fg = ((np.abs(fg_If*weight_If)**2).sum(axis=1)/(np.abs(weight_If)**2).sum(axis=1)).T
+    
+    delay_cut = np.zeros(len(cov_diag_data))
+    for ant_indx in range(len(cov_diag_data)):
+        pars = fmin(chisq,(1,0.05,0.07),
+                    args=(fitfunc,
+                          eta_arr*1e6,
+                          cov_diag_fg[ant_indx]/cov_diag_fg[ant_indx].max(),
+                          1),disp=False,full_output=True
+                   )
+        if pars[-1]==0:
+            pars = pars[0]
+            delay_cut[ant_indx] = np.log(100)**(1/pars[0])*pars[1]/1e6
+        else:
+            pars = pars[0]
+            delay_cut[ant_indx] = 0.1/1e6
+    delay_indx = np.abs(eta_arr)[None,:]>delay_cut[:,None]
+    with np.errstate(divide='ignore', invalid='ignore'):
+        delay_flag = (((cov_diag_data-sigma_nf**2)>(
+            5*sigma_nf**2
+            *np.sqrt(2/time_step.size/indx_I.mean(axis=0))
+        )[:,None])
+                      *delay_indx)
+    bl_flag = delay_flag.sum(axis=-1)>0
+    flag_I = np.ones(data_I.shape)
+    flag_I[:,(indx_I*(1-bl_flag[None,:])).astype('bool')] = 0
+    vis,count = grid_vis(uarr.ravel(),varr.ravel(),uvedges,data_I.reshape((num_ch,-1)),flag_I.reshape((num_ch,-1)),True)
+    if save:
+        np.save(scratch_dir+'vis_'+block+'_'+scan,vis)
+        np.save(scratch_dir+'count_'+block+'_'+scan,count)
+    if verbose:
+        print('Finished block', block,'Scan',scan,
+              datetime.datetime.now().time().strftime("%H:%M:%S"))
+    return vis,count
