@@ -1,3 +1,4 @@
+from scipy.optimize import fmin
 from casatools import ms,table
 import numpy as np
 import sys
@@ -9,13 +10,9 @@ import re
 import pickle
 import warnings
 from scipy.ndimage import gaussian_filter
-from scipy.optimize import fmin
 from scipy.signal import blackmanharris
-
-def chisq(pars,func,xarr,yarr,yerr):
-    #fitfunc,xarr,yarr,yerr = args
-    fitarr = func(xarr,pars)
-    return 0.5*np.sum((fitarr-yarr)**2/yerr**2)
+from .basic_util import chisq,Specs,f_21,slicer_vectorized,vfind_scan,fill_nan
+from .ms_tool import read_ms
 
 def fitfunc(xarr,pars):
     '''
@@ -37,143 +34,6 @@ def sort_ifr(time,ant1,ant2):
     sort_indx = np.argsort(sort_arr)
     return sort_indx,len(time_step),int(len(ant_id)*(len(ant_id)-1)/2)
 
-
-class Specs:
-    """
-    Defines the basic specifications of simulation.
-    """
-    def __init__(self, 
-                 cosmo,
-                 freq_start_hz,
-                 num_channels,
-                 deltav_ch,
-                 FWHM_ref,
-                 FWHM_freq_ref,
-                ):
-        self.cosmo = cosmo
-        self.freq_start_hz = freq_start_hz # in Hz
-        self.num_channels = num_channels
-        self.deltav_ch = deltav_ch # in Hz
-        self.FWHM_ref = FWHM_ref
-        self.FWHM_freq_ref = FWHM_freq_ref
-
-        
-    def freq_arr(self):
-        """The observing frequency of each channel"""
-        arr = (self.freq_start_hz + 
-               np.arange(self.num_channels)*self.deltav_ch)
-        return arr
-    
-    def FWHM_arr(self):
-        """The FWHM of each channel"""
-        return self.FWHM_ref*self.FWHM_freq_ref/self.freq_arr()
-    
-    def sigma_arr(self):
-        """The beam radius of each channel"""
-        return self.FWHM_arr()/2/np.sqrt(2*np.log(2))
-    
-    def lamb_arr(self):
-        """The observing wavelength of each channel"""
-        return constants.c.value/self.freq_arr()
-    
-    def z_arr(self):
-        """The observing redshift of each channel"""
-        return f_21 / self.freq_arr() -1
-    
-    def chi_arr(self):
-        """the comoving distance of each channel"""
-        return self.cosmo.comoving_distance(self.z_arr()).value
-    
-    def Hz_arr(self):
-        """The Hubble parameter of each channel"""
-        return self.cosmo.H(self.z_arr()).value
-    
-    def eta_arr(self):
-        """Array of eta from Fourier transform in Hz^-1"""
-        return np.fft.fftfreq(self.num_channels,d=self.deltav_ch)
-    
-    def z_0(self):
-        """The mean redshift of the frequency range"""
-        z_arr = self.z_arr()
-        return (z_arr[0]+z_arr[-1])/2
-    
-    def freq_0(self):
-        """The frequency of the mean redshift"""
-        return f_21/(1+self.z_0())
-    
-    def sigma_0(self):
-        """The beam size corresponding to the mean redshift"""
-        sigma_0 = (self.FWHM_ref*self.FWHM_freq_ref
-                   /self.freq_0()/2/np.sqrt(2*np.log(2)))
-        return sigma_0
-    
-    def X_0(self):
-        """The comoving radial distance at z_0"""
-        return self.cosmo.comoving_distance(self.z_0()).value
-    
-    def Y_0(self):
-        """The los distance per frequency, Mpc/Hz"""
-        z_0 = self.z_0()
-        Y_0 = ((constants.c/self.cosmo.H(z_0)/
-                (f_21*units.Hz)*(1+z_0)**2)).to('Mpc/Hz').value # in Mpc/Hz
-        return Y_0
-    
-    def lambda_0(self):
-        """The wavelength at z_0"""
-        return constants.c.value/self.freq_0()
-    
-    def k_para(self):
-        """The line-of-sight k_para given by 2*pi*eta/Y"""
-        return 2*np.pi*self.eta_arr()/self.Y_0()
-    
-    def k_perp(self,umode):
-        """Calculate the transverse scale corresponding to the u-v radius"""
-        return 2*np.pi*umode/self.X_0()
-
-
-def slicer_vectorized(a,start,end):
-    """A function for slicing through numpy arrays with string elements"""
-    b = a.view((str,1)).reshape(len(a),-1)[:,start:end]
-    return np.frombuffer(b.tobytes(),dtype=(str,end-start))
-
-f_21 = 1420405751.7667 # in Hz
-
-def read_ms(filename,keys,sel_ch=None,verbose=False,ifraxis=False):
-    '''
-    A function to read in the measurementset data and returns the values.
-    
-    Parameters
-    ----------
-        filename: str 
-            The name of the measurementset file to read.
-        
-        keys: list or array of strings 
-            The keywords to read.
-            
-        sel_ch: float array
-            The channel selection function to pass into :py:meth:`casatools.selectchannel`. 
-            See https://casadocs.readthedocs.io/en/stable/api/tt/casatools.ms.html#casatools.ms.ms.selectchannel .
-        verbose: bool, default False
-            Whether to print out time information.
-            
-    Returns
-    -------
-        data: a list of np arrays containing the data corresponding to the keywords, indexed according to the input `keys`.
-    '''
-    if verbose:
-        print('Reading data...',datetime.datetime.now().time().strftime("%H:%M:%S"))
-    msset = ms()
-    msset.open(filename)
-    if sel_ch is not None:
-        msset.selectchannel(sel_ch[0],sel_ch[1],sel_ch[2],sel_ch[3])
-    data = msset.getdata(keys,ifraxis=ifraxis)
-    msset.close()
-    keylist = np.array(list(data.keys()))
-    key_pos = np.where(np.array(keys)[:,None]==keylist[None,:])[-1]
-    data = np.array(list(data.values()),dtype='object')[key_pos]
-    if verbose:
-        print('Finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
-    return data
 
 def fill_row(flag):
     '''
@@ -467,7 +327,7 @@ def save_scan(i,args):
         1
     '''
     submslist,uvedges,frac,block_num,scratch_dir,sel_ch,stokes,col,fill,verbose,ignore_flag = args
-    scan_id = vfindscan(submslist)
+    scan_id = vfind_scan(submslist)
     block_id = vfind_id(submslist)
     if verbose:
         print('Reading block', block_id[i],'Scan', scan_id[i],datetime.datetime.now().time().strftime("%H:%M:%S"))
@@ -692,7 +552,7 @@ def save_cal(i,args):
         1
     '''
     cal_tab,submslist,uvedges,frac,block_num,scratch_dir,sel_ch,stokes,fill,verbose = args
-    scan_id = vfindscan(submslist)
+    scan_id = vfind_scan(submslist)
     block_id = vfind_id(submslist)
     if verbose:
         print('Reading block', block_id[i],'Scan', scan_id[i],datetime.datetime.now().time().strftime("%H:%M:%S"))
@@ -709,7 +569,7 @@ def get_rfisum(scan_indx,block_indx,block_id,submslist,save_dir,col,sel_ch,windo
     A function to return a collection of diagnostic statistics for identifying the residual RFI near the horizon.
     To be expanded.
     """
-    scan_id = vfindscan(submslist)
+    scan_id = vfind_scan(submslist)
     if verbose:
         print('Now processing Block '+block_id[block_indx]+' Scan '+scan_id[scan_indx],datetime.datetime.now().time().strftime("%H:%M:%S"))
     msset = ms()
@@ -822,24 +682,7 @@ def get_rfisum(scan_indx,block_indx,block_id,submslist,save_dir,col,sel_ch,windo
     if verbose:
         print('Finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
     return 1
-        
 
-def find_block_id(filename):
-    reex = '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
-    result = re.findall(reex,filename)
-    # make sure there is only one block_id in the path
-    assert result.count(result[0]) == len(result)
-    result = result[0]
-    return result
-
-vfind_id = np.vectorize(find_block_id)
-
-def findscan(filename):
-    reex = '\.[0-9][0-9][0-9][0-9]\.'
-    result = (re.findall(reex, filename)[0])
-    return result[1:-1]
-
-vfindscan = np.vectorize(findscan)
 
 def worker_rfi(scan_indx,submslist,uvedges,flag_frac,sel_ch,window,hor_low,hor_high,col='corrected_data',verbose=False):
     msset = ms()
@@ -926,20 +769,6 @@ def worker_rfi(scan_indx,submslist,uvedges,flag_frac,sel_ch,window,hor_low,hor_h
         print('Finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
     return vis_gridded,count
 
-def fill_nan(x_arr,sigma=2,truncate=4):
-    """
-    fill the nan elements of an array with gaussian smoothed interpolation.
-    """
-    x_alt=x_arr.copy()
-    x_alt[np.isnan(x_arr)]=0
-    x_alt=gaussian_filter(x_alt,sigma=sigma,truncate=truncate)
-    x_test=0*x_arr.copy()+1
-    x_test[np.isnan(x_arr)]=0
-    x_test=gaussian_filter(x_test,sigma=sigma,truncate=truncate)
-    x_smooth=x_alt/x_test
-    x_arr[np.isnan(x_arr)]=x_smooth[np.isnan(x_arr)]
-    return x_arr
-
 def sim_worker(scan_indx,submslist,sp,uvedges,flag_frac,vis_hi_pad_1,vis_hi_pad_2,conv_factor,sel_ch=None,col='corrected_data',verbose=False):
     sign_I = np.array([1,1])
     sign_V = np.array([-1j,1j])
@@ -1022,7 +851,7 @@ def sim_worker(scan_indx,submslist,sp,uvedges,flag_frac,vis_hi_pad_1,vis_hi_pad_
 
 def save_sim(i,args):
     submslist,sp,uvedges,flag_frac,vis_hi_pad_1,vis_hi_pad_2,conv_factor,sel_ch,col,verbose,scratch_dir = args
-    scan_id = vfindscan(submslist)
+    scan_id = vfind_scan(submslist)
     block_id = vfind_id(submslist)
     if verbose:
         print('Reading block', block_id[i],'Scan', scan_id[i],datetime.datetime.now().time().strftime("%H:%M:%S"))
@@ -1062,7 +891,7 @@ def grid_vis(uarr,varr,uvedges,data,flag,fill):
 
 def sim_realization(i,args):
     scratch_dir,submslist,sp,uvedges,flag_frac,vis_hi_dir,num_sim,sel_ch,col,verbose=args
-    scan_id = vfindscan(submslist)
+    scan_id = vfind_scan(submslist)
     block_id = vfind_id(submslist)
     if verbose:
         print('Reading block', block_id[i],'Scan', scan_id[i],datetime.datetime.now().time().strftime("%H:%M:%S"))
@@ -1214,7 +1043,7 @@ def sum_scan_sim(real_id,args):
 def worker_grid(ms_indx,submslist,uvedges,flag_frac,delay_sigma=5,sel_ch=None,col='corrected_data',verbose=False,save=False,scratch_dir='./',start_ch=0,num_ch=None,taper=blackmanharris):
     sign_I = np.array([1,1])
     sign_V = np.array([-1j,1j])
-    scan_id = vfindscan(submslist)
+    scan_id = vfind_scan(submslist)
     block_id = vfind_id(submslist)
     block = block_id[ms_indx]
     scan = scan_id[ms_indx]

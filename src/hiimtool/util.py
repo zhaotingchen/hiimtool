@@ -6,19 +6,8 @@ from itertools import product
 import torch
 from torch.fft import fft,fftn,fftfreq
 import re
+from .basic_util import p2dim
 #from hiimvis import Specs
-
-def p2dim(p2d):
-    '''Average cylindrical array with negative and positive k_para to positive only k_para'''
-    num_para = p2d.shape[-1]//2
-    p2darr = np.zeros((len(p2d), num_para+1))
-    p2darr[:,0] = p2d[:,0]
-    if p2d.shape[-1]%2 ==0:
-        p2darr[:,1:-1] = (p2d[:,1:num_para]+p2d[:,-1:num_para:-1])/2
-        p2darr[:,-1] = p2d[:,num_para]
-    else:
-        p2darr[:,1:] = (p2d[:,1:num_para+1]+p2d[:,-1:-num_para-1:-1])/2
-    return p2darr
 
 def slicer_vectorized(a,start,end):
     b = a.view((str,1)).reshape(len(a),-1)[:,start:end]
