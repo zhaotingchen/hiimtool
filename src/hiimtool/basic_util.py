@@ -114,8 +114,8 @@ class Specs:
 def find_block_id(filename):
     reex = '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
     result = re.findall(reex,filename)
-    # make sure there is only one block_id in the path
-    assert result.count(result[0]) == len(result)
+    if result.count(result[0]) != len(result):
+        raise ValueError("ambiguous block id from filename "+filename)
     result = result[0]
     return result
 
@@ -123,7 +123,10 @@ vfind_id = np.vectorize(find_block_id)
 
 def find_scan(filename):
     reex = '\.[0-9][0-9][0-9][0-9]\.'
-    result = (re.findall(reex, filename)[0])
+    result = re.findall(reex, filename)
+    if result.count(result[0]) != len(result):
+        raise ValueError("ambiguous scan id from filename "+filename)
+    result = result[0]
     return result[1:-1]
 
 vfind_scan = np.vectorize(find_scan)
