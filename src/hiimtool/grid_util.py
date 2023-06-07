@@ -11,7 +11,7 @@ import pickle
 import warnings
 from scipy.ndimage import gaussian_filter
 from scipy.signal import blackmanharris
-from .basic_util import chisq,Specs,f_21,slicer_vectorized,vfind_scan,fill_nan
+from .basic_util import chisq,Specs,f_21,slicer_vectorized,vfind_scan,fill_nan,vfind_id
 from .ms_tool import read_ms
 
 def fitfunc(xarr,pars):
