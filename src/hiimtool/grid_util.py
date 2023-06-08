@@ -11,7 +11,7 @@ import pickle
 import warnings
 from scipy.ndimage import gaussian_filter
 from scipy.signal import blackmanharris
-from .basic_util import chisq,Specs,f_21,slicer_vectorized,vfind_scan,fill_nan,vfind_id
+from .basic_util import chisq,Specs,f_21,slicer_vectorized,vfind_scan,fill_nan,vfind_id,itr_tnsq_avg
 from .ms_tool import read_ms
 
 def fitfunc(xarr,pars):
@@ -1040,7 +1040,7 @@ def sum_scan_sim(real_id,args):
     return 1
 
 
-def worker_grid(ms_indx,submslist,uvedges,flag_frac,delay_sigma=5,sel_ch=None,col='corrected_data',verbose=False,save=False,scratch_dir='./',start_ch=0,num_ch=None,taper=blackmanharris):
+def worker_grid(ms_indx,submslist,uvedges,flag_frac,delay_sigma=5,sel_ch=None,col='corrected_data',verbose=False,save=False,scratch_dir='./',start_ch=0,num_ch=None,taper=blackmanharris,log_dir=None,delay_lim=0.5):
     sign_I = np.array([1,1])
     sign_V = np.array([-1j,1j])
     scan_id = vfind_scan(submslist)
@@ -1090,6 +1090,10 @@ def worker_grid(ms_indx,submslist,uvedges,flag_frac,delay_sigma=5,sel_ch=None,co
         if save:
             np.save(scratch_dir+'vis_'+block+'_'+scan,0.0+0.0j)
             np.save(scratch_dir+'count_'+block+'_'+scan,0.0)
+        if log_dir is not None:
+            log_file = 'log_'+block+'_scan_'+scan+'.pkl'
+            with open(log_dir+log_file, 'wb') as file:
+                pickle.dump(dict(), file)
         return 0.0+0.0j,0.0
     flag_V = (flag[1]+flag[2])>0  # if XX or YY is flagged then I is flagged 
     indx_V = flag_V.mean(axis=0)<flag_frac
@@ -1145,28 +1149,43 @@ def worker_grid(ms_indx,submslist,uvedges,flag_frac,delay_sigma=5,sel_ch=None,co
         cov_diag_data = ((np.abs(data_If*weight_If)**2).sum(axis=1)/(np.abs(weight_If)**2).sum(axis=1)).T
         cov_diag_fg = ((np.abs(fg_If*weight_If)**2).sum(axis=1)/(np.abs(weight_If)**2).sum(axis=1)).T
     
-    delay_cut = np.zeros(len(cov_diag_data))
-    for ant_indx in range(len(cov_diag_data)):
-        pars = fmin(chisq,(1,0.05,0.07),
-                    args=(fitfunc,
-                          eta_arr*1e6,
-                          cov_diag_fg[ant_indx]/cov_diag_fg[ant_indx].max(),
-                          1),disp=False,full_output=True
-                   )
+    uvdist = (np.sqrt(uarr**2+varr**2)*lamb_0).mean(axis=0) # in m
+    delay_cut_fg = np.zeros(len(cov_diag_fg))
+    delay_cut_lim = np.zeros(len(cov_diag_fg))
+    for ant_indx in range(len(cov_diag_fg)):
+        pars = fmin(chisq,(1,0.05,0.07),args=(fitfunc,eta_arr*1e6,cov_diag_fg[ant_indx]/cov_diag_fg[ant_indx].max(),1),disp=False,full_output=True)
         if pars[-1]==0:
             pars = pars[0]
-            delay_cut[ant_indx] = np.log(100)**(1/pars[0])*pars[1]/1e6
+            delay_cut_fg[ant_indx] = np.log(100)**(1/pars[0])*pars[1]/1e6
+            delay_cut_lim[ant_indx] = max(delay_cut_fg[ant_indx],uvdist[ant_indx]/constants.c.value*delay_lim)
         else:
             pars = pars[0]
-            delay_cut[ant_indx] = 0.1/1e6
+            delay_cut_fg[ant_indx] = uvdist[ant_indx]/constants.c.value*delay_lim
+            delay_cut_lim[ant_indx] = uvdist[ant_indx]/constants.c.value*delay_lim
+    delay_cut = (delay_cut_fg>=delay_cut_lim)*delay_cut_fg+(delay_cut_fg<delay_cut_lim)*delay_cut_lim
     delay_indx = np.abs(eta_arr)[None,:]>delay_cut[:,None]
+    delay_indx_fg = np.abs(eta_arr)[None,:]>delay_cut_fg[:,None]
+    tn_est = np.zeros(len(cov_diag_data))
+    for i in range(len(cov_diag_data)):
+        cov_diag_i = cov_diag_data[i][delay_indx_fg[i]]
+        tn_est[i] = itr_tnsq_avg(cov_diag_i,time_step.size*indx_I[:,i].mean())
     with np.errstate(divide='ignore', invalid='ignore'):
-        delay_flag = (((cov_diag_data-sigma_nf**2)>(
-            5*sigma_nf**2
-            *np.sqrt(2/time_step.size/indx_I.mean(axis=0))
-        )[:,None])
-                      *delay_indx)
+        delay_flag = ((cov_diag_data-tn_est[:,None])>(5*tn_est*np.sqrt(2/time_step.size/indx_I.mean(axis=0)))[:,None])*delay_indx
     bl_flag = delay_flag.sum(axis=-1)>0
+    if log_dir is not None:
+        flag_sel = bl_flag*(indx_I.mean(axis=0)!=0)
+        ant1_flag = ant1[0,flag_sel]
+        ant2_flag = ant2[0,flag_sel]
+        uarr_flag = uarr[:,flag_sel]
+        varr_flag = varr[:,flag_sel]
+        log_file = 'log_'+block+'_scan_'+scan+'.pkl'
+        log_dict = {'ant1':ant1_flag,
+           'ant2':ant2_flag,
+           'uarr':uarr_flag,
+           'varr':varr_flag,}
+        with open(log_dir+log_file, 'wb') as file:
+            pickle.dump(log_dict, file)
+    
     flag_I = np.ones(data_I.shape)
     flag_I[:,(indx_I*(1-bl_flag[None,:])).astype('bool')] = 0
     vis,count = grid_vis(uarr.ravel(),varr.ravel(),uvedges,data_I.reshape((num_ch,-1)),flag_I.reshape((num_ch,-1)),True)
