@@ -159,3 +159,16 @@ def p2dim(p2d):
     else:
         p2darr[:,1:] = (p2d[:,1:num_para+1]+p2d[:,-1:-num_para-1:-1])/2
     return p2darr
+
+def itr_tnsq_avg(in_arr,num_sp,max_it=5,sigma=5,frac_lim = 0.01):
+    '''Interatively get the underlying average of thermal noise delay ps excluding the peaks'''
+    avg_init = in_arr.mean()
+    avg = 0
+    for it_id in range(max_it):
+        avg_thr = avg_init*(1+sigma*np.sqrt(2/num_sp))
+        avg_flag = avg_thr>in_arr
+        avg = in_arr[avg_flag].mean()
+        if np.abs(1-avg/avg_init)<frac_lim:
+            break
+        avg_init = avg
+    return avg

@@ -1,4 +1,4 @@
-from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21
+from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg
 import pytest
 import numpy as np
 from astropy.cosmology import Planck15
@@ -80,3 +80,9 @@ def test_Specs():
     assert sp.k_para().max() == 0.21842205206818646
     assert sp.k_perp(0) == 0
     assert np.allclose(sp.lambda_0(),lamb_21*(1+sp.z_0()))
+    
+def test_itr_tnsq_avg():
+    rand_arr = np.random.normal(0,1,size=(1000,100))
+    rand_arr = (rand_arr**2).mean(axis=-1)
+    rand_avg = itr_tnsq_avg(rand_arr,10)
+    assert np.abs(rand_avg-1)<1e-1
