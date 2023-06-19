@@ -1040,7 +1040,7 @@ def sum_scan_sim(real_id,args):
     return 1
 
 
-def worker_grid(ms_indx,submslist,uvedges,flag_frac,delay_sigma=5,sel_ch=None,col='corrected_data',verbose=False,save=False,scratch_dir='./',start_ch=0,num_ch=None,taper=blackmanharris,log_dir=None,delay_lim=0.5):
+def worker_grid(ms_indx,submslist,uvedges,flag_frac,delay_sigma=5,sel_ch=None,col='corrected_data',verbose=False,save=False,scratch_dir='./',start_ch=0,num_ch=None,taper=blackmanharris,log_dir=None,delay_lim=0.5,delay_inpaint=False,grid_flag=False):
     sign_I = np.array([1,1])
     sign_V = np.array([-1j,1j])
     scan_id = vfind_scan(submslist)
@@ -1093,7 +1093,7 @@ def worker_grid(ms_indx,submslist,uvedges,flag_frac,delay_sigma=5,sel_ch=None,co
         if log_dir is not None:
             log_file = 'log_'+block+'_scan_'+scan+'.pkl'
             with open(log_dir+log_file, 'wb') as file:
-                pickle.dump(dict(), file)
+                pickle.dump('fully flagged', file)
         return 0.0+0.0j,0.0
     flag_V = (flag[1]+flag[2])>0  # if XX or YY is flagged then I is flagged 
     indx_V = flag_V.mean(axis=0)<flag_frac
@@ -1139,7 +1139,7 @@ def worker_grid(ms_indx,submslist,uvedges,flag_frac,delay_sigma=5,sel_ch=None,co
          *window[:,None]*np.sqrt(renorm)),axis=0
     ).std()
     sigma_nf = test_std*delta_ch
-    data_If = np.fft.fft(data_I*window[:,None,None],axis=0)*delta_ch*np.sqrt(renorm)
+    data_If = np.fft.fft(data_I,axis=0)*delta_ch
     data_If = np.fft.fftshift(data_If,axes=0)
     fg_If = np.fft.fft(fg_I*window[:,None,None],axis=0)*delta_ch*np.sqrt(renorm)
     fg_If = np.fft.fftshift(fg_If,axes=0)
@@ -1170,10 +1170,26 @@ def worker_grid(ms_indx,submslist,uvedges,flag_frac,delay_sigma=5,sel_ch=None,co
         cov_diag_i = cov_diag_data[i][delay_indx_fg[i]]
         tn_est[i] = itr_tnsq_avg(cov_diag_i,time_step.size*indx_I[:,i].mean())
     with np.errstate(divide='ignore', invalid='ignore'):
-        delay_flag = ((cov_diag_data-tn_est[:,None])>(5*tn_est*np.sqrt(2/time_step.size/indx_I.mean(axis=0)))[:,None])*delay_indx
+        delay_flag = ((cov_diag_data-tn_est[:,None])>(5*tn_est*np.sqrt(1/time_step.size/indx_I.mean(axis=0)))[:,None])*delay_indx
     bl_flag = delay_flag.sum(axis=-1)>0
+    flag_sel = bl_flag*(indx_I.mean(axis=0)!=0)
+    clean_indx = ((1-delay_flag)*(np.abs(eta_arr)[None,:]>delay_cut[:,None])).astype('bool')
+    data_If_inpaint = data_If[:,:,flag_sel].copy()
+    data_If_inpaint = np.transpose(data_If_inpaint,axes=(0,2,1))
+    clean_weight = (clean_indx[flag_sel].T)[:,:,None]*(indx_I[:,flag_sel].T)[None,:,:]
+    test_indx = (clean_indx.T)[:,None,:]*(indx_I)[None,:,:]
+    ratio = (np.abs(data_If_inpaint[clean_weight])**2).mean()/(np.abs(data_If_inpaint[clean_weight])**2).std()
+    #flag_sel = bl_flag*(indx_I.mean(axis=0)!=0)
+    if np.abs(1-ratio)>0.1:
+        if log_dir is not None:
+            log_file = 'log_'+block+'_scan_'+scan+'.pkl'
+            with open(log_dir+log_file, 'wb') as file:
+                pickle.dump('vis does not behave like thermal noise', file)
+        if save:
+            np.save(scratch_dir+'vis_'+block+'_'+scan,0.0+0.0j)
+            np.save(scratch_dir+'count_'+block+'_'+scan,0.0)
+        return 0.0+0.0j,0.0
     if log_dir is not None:
-        flag_sel = bl_flag*(indx_I.mean(axis=0)!=0)
         ant1_flag = ant1[0,flag_sel]
         ant2_flag = ant2[0,flag_sel]
         uarr_flag = uarr[:,flag_sel]
@@ -1187,8 +1203,45 @@ def worker_grid(ms_indx,submslist,uvedges,flag_frac,delay_sigma=5,sel_ch=None,co
             pickle.dump(log_dict, file)
     
     flag_I = np.ones(data_I.shape)
-    flag_I[:,(indx_I*(1-bl_flag[None,:])).astype('bool')] = 0
+    if delay_inpaint:
+        # another ratio check for to-be-inpainted data
+        ratio = (np.abs(data_If_inpaint[clean_weight])**2).mean()/(np.abs(data_If_inpaint[clean_weight])**2).std()
+        if np.abs(1-ratio)>0.1:
+            #skip inpainting if not thermal noise like
+            flag_I[:,(indx_I*(1-bl_flag[None,:])).astype('bool')] = 0
+        else:
+            data_If_inpaint[delay_flag[flag_sel].T] = np.random.choice(
+                data_If_inpaint[clean_weight].ravel(),
+                size=data_If_inpaint[delay_flag[flag_sel].T].shape,
+                replace=True
+            )
+            data_If_inpaint[delay_flag[flag_sel].T] *= np.exp(1j*np.random.uniform(0,2*np.pi,size=data_If_inpaint[delay_flag[flag_sel].T].shape))
+            data_ij_inpaint = np.fft.ifft(
+                np.fft.ifftshift(data_If_inpaint,axes=0)/delta_ch,axis=0)
+            data_ij_inpaint = np.transpose(data_ij_inpaint,axes=(0,2,1))
+            data_I[:,:,flag_sel] = data_ij_inpaint
+            flag_I[:,(indx_I).astype('bool')] = 0
+    else:
+        flag_I[:,(indx_I*(1-bl_flag[None,:])).astype('bool')] = 0
+
     vis,count = grid_vis(uarr.ravel(),varr.ravel(),uvedges,data_I.reshape((num_ch,-1)),flag_I.reshape((num_ch,-1)),True)
+    if grid_flag:
+        vis_f = np.fft.fft(vis,axis=0)*delta_ch
+        vis_f = np.fft.fftshift(vis_f,axes=0)
+        vis_indx = count!=0
+        ucen = np.diff(uvedges)/2+uvedges[:-1]
+        umode_i = np.sqrt(ucen[:,None]**2+ucen[None,:]**2)[vis_indx]
+        delay_cut_i = umode_i/constants.c.value*delay_lim
+        u_i,v_i = np.meshgrid(ucen,ucen)
+        u_i = u_i[vis_indx]
+        v_i = v_i[vis_indx]
+        tn_est_i = np.zeros(vis_indx.sum())
+        for i in range(len(tn_est_i)):
+            tn_est_i[i] = itr_tnsq_avg(np.abs(vis_f[:,vis_indx][:,i])**2,1)
+        vis_flag = np.zeros(count.shape)
+        vis_flag[vis_indx] = ((np.abs(vis_f[:,vis_indx])**2>(4*tn_est_i[None,:]))*(np.abs(eta_arr)[:,None]>delay_cut_i[None,:])).sum(axis=0)>0
+        vis = vis*(1-vis_flag)
+        count = count*(1-vis_flag)
     if save:
         np.save(scratch_dir+'vis_'+block+'_'+scan,vis)
         np.save(scratch_dir+'count_'+block+'_'+scan,count)
