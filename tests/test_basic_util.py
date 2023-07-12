@@ -1,7 +1,9 @@
-from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg
+from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat
 import pytest
 import numpy as np
 from astropy.cosmology import Planck15
+from scipy.signal import blackmanharris
+
 
 lamb_21 = 0.21106114054160 # in meters
 
@@ -86,3 +88,20 @@ def test_itr_tnsq_avg():
     rand_arr = (rand_arr**2).mean(axis=-1)
     rand_avg = itr_tnsq_avg(rand_arr,10)
     assert np.abs(rand_avg-1)<1e-1
+    
+    
+def test_delay_transform():
+    test_arr = np.ones(np.random.randint(1,100,size=1)[0])
+    test_f_arr = delay_transform(test_arr,1,test_arr)
+    assert test_f_arr[0] == len(test_arr)
+    assert np.allclose(test_f_arr[1:],0)
+    with pytest.raises(AssertionError) as exc_info:
+        delay_transform(test_arr,1,test_arr[:-1])
+        
+def test_get_conv_mat():
+    num_grid = np.random.randint(1,10000)
+    test_x = np.arange(num_grid)
+    test_w = blackmanharris(num_grid)
+    conv_arr = np.convolve(test_w,test_x,mode='same')
+    test_conv = get_conv_mat(test_w)@test_x
+    assert np.allclose(conv_arr,test_conv)
