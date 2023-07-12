@@ -172,3 +172,29 @@ def itr_tnsq_avg(in_arr,num_sp,max_it=5,sigma=5,frac_lim = 0.01):
             break
         avg_init = avg
     return avg
+
+def delay_transform(vis,delta_ch,window):
+    '''
+    Perform delay transform along the first axis.
+    '''
+    num_ch = len(vis)
+    assert len(window)==num_ch
+    testarr_f = np.zeros(num_ch)
+    testarr_f[num_ch//2]=1.0
+    testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
+    testarr_w = (np.fft.fft(testarr*window))
+    renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+    vis_f = np.fft.fft(vis,axis=0)*delta_ch
+    return vis_f
+
+def get_conv_mat(inp):
+    '''
+    Generate the matrix representation of a convolution kernel.
+    Currently only support 1-D convolutions of two arrays of same length.
+    '''
+    num_grid = len(inp)
+    indx_arr = np.linspace(np.linspace(0,num_grid-1,num_grid),np.linspace(-num_grid+1,0,num_grid),num_grid).T
+    window_pad = np.zeros(num_grid*2-1)
+    window_pad[(num_grid-1)//2:((num_grid-1)//2+num_grid)] = inp
+    indx_arr = (indx_arr+num_grid-2+num_grid%2).astype('int')
+    return window_pad[indx_arr]
