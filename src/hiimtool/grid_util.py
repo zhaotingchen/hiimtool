@@ -201,15 +201,18 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',col='correcte
     if stokes=='I':
         pol = (0,3)
         sign = np.array([1,1])
-    else:
+    elif stokes=='V':
         pol = (1,2)
         sign = np.array([-1j,1j])
+    elif stokes=='Q':
+        pol = (0,3)
+        sign = np.array([1,-1])
         
     filename = submslist[scan_indx]
     msset = ms()
     msset.open(filename)
-    if sel_ch is not None:
-        msset.selectchannel(sel_ch[0],sel_ch[1],sel_ch[2],sel_ch[3])
+    #if sel_ch is not None:
+    #    msset.selectchannel(sel_ch[0],sel_ch[1],sel_ch[2],sel_ch[3])
     metadata = msset.metadata()
     if sel_ch is not None:
         freq_arr = metadata.chanfreqs(0)[sel_ch[1]:sel_ch[1]+sel_ch[0]] # get the frequencies
@@ -219,7 +222,10 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',col='correcte
     num_ch = len(freq_arr)    
 
     #get all the data needed
-    data,uarr,varr,flag = read_ms(submslist[scan_indx],[col,'u','v','flag'],sel_ch,verbose)
+    data,uarr,varr,flag = read_ms(submslist[scan_indx],[col,'u','v','flag'],None,verbose)
+    if sel_ch is not None:
+        data = data[:,sel_ch[1]:sel_ch[1]+sel_ch[0],:]
+        flag = flag[:,sel_ch[1]:sel_ch[1]+sel_ch[0],:]
     
     if ignore_flag is True:
         flag = np.zeros_like(flag)
@@ -234,6 +240,11 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',col='correcte
     varr /= lamb_0
     flag_I = (flag[pol[0]]+flag[pol[1]])>0  # if XX or YY is flagged then I is flagged 
     indx = flag_I.mean(axis=0)<flag_frac
+    if indx.sum()==0:
+        if verbose:
+            print('block', block,'Scan',scan,'fully flagged',
+              datetime.datetime.now().time().strftime("%H:%M:%S"))
+        return 0.0+0.0j,0.0
     #get rid of the flag_frac excluded channels
     data = data[:,:,indx] 
     flag = flag[:,:,indx]
