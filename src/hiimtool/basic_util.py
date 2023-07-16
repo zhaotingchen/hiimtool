@@ -184,7 +184,8 @@ def delay_transform(vis,delta_ch,window):
     testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
     testarr_w = (np.fft.fft(testarr*window))
     renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
-    vis_f = np.fft.fft(vis,axis=0)*delta_ch
+    vis_f = (np.fft.fft(vis*window[:,None],axis=0)*delta_ch
+             *np.sqrt(renorm))
     return vis_f
 
 def get_conv_mat(inp):
