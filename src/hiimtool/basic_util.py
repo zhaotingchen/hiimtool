@@ -5,6 +5,7 @@ import numpy as np
 from astropy import constants,units
 import re
 from scipy.ndimage import gaussian_filter
+from scipy.interpolate import interp1d
 
 f_21 = 1420405751.7667 # in Hz
 
@@ -198,3 +199,125 @@ def get_conv_mat(inp):
     window_pad[(num_grid-1)//2:((num_grid-1)//2+num_grid)] = inp
     indx_arr = (indx_arr+num_grid-2+num_grid%2).astype('int')
     return window_pad[indx_arr]
+
+
+def himf(m,phi_s,m_s,alpha_s):
+    """
+    Analytical HIMF function (or any other Schechter function).
+    
+    .. math:: \phi = {\rm log}_{10} \phi_* *(m/m_*)^(\alpha_*+1)*e^{-m/m_*}
+    
+    While the units are arbitrary, it is recommended that 
+    phi_s is in the unit of Mpc:sup:`-3`dex:sup:`-1`,
+    m_s is in the unit of M_sun,
+    alpha_s has no unit.
+    
+    
+    Parameters
+    ----------
+        m: float array. 
+            mass
+        phi_s: float.
+            HIMF amplitude
+        m_s: float.
+            knee mass
+        alpha_s: float.
+            slope
+            
+    Returns
+    -------
+        out: float array.
+            The HIMF values at m
+    """
+    out = (np.log(10)*phi_s*(m/m_s)**(alpha_s+1)*np.exp(-m/m_s))
+    return out
+
+def cal_himf(x,mmin,cosmo,mmax=11):
+    '''
+    Calculate the integrated quantity related to the HIMF.
+    
+    Parameters
+    ----------
+        x: list of float. 
+            need to be [phi_s,log10(m_s),alpha_s]
+        mmin: float.
+            The minimum mass to integrate from in log10
+        cosmo: an :obj:`astropy.cosmology.Cosmology` object.
+            The cosmology object to calculate critical density
+        mmax: Optional float, default 11.
+            The maximum mass to integrate to in log10.
+            
+    Returns
+    -------
+        nhi: float.
+            The number density of HI galaxies, in the units of phi_s * dex
+        omegahi: float.
+            The HI density over the critical density of the present day (assuming the recommended units for x are used)
+        psn: float.
+            The shot noise in the units of Mpc:sup:`3` (assuming the recommended units for x are used)
+    '''
+    marr = np.logspace(mmin,mmax,num=500)
+    omegahi = (np.trapz(himf(marr,x[0],10**x[1],x[2])*marr,
+                        x=np.log10(marr))*units.M_sun/units.Mpc**3
+               /cosmo.critical_density0).to('').value
+    psn = (np.trapz(himf(marr,x[0],10**x[1],x[2])*marr**2,x=np.log10(marr))
+           /np.trapz(himf(marr,x[0],10**x[1],x[2])*marr,x=np.log10(marr))**2
+          )
+    nhi = np.trapz(himf(marr,x[0],10**x[1],x[2]),x=np.log10(marr))
+    return nhi,omegahi,psn
+
+def cumu_nhi_from_himf(m,mmin,x):
+    """
+    The integrated source number density from HIMF.
+    
+    Parameters
+    ----------
+        m: float array.
+            The higher end of integration in log10
+        mmin: float.
+            The minimum mass to integrate from in log10
+        x: list of float. 
+            need to be [phi_s,log10(m_s),alpha_s]
+            
+    Returns
+    -------
+        nhi: float array.
+            The integrated number density of HI galaxies, in the units of phi_s * dex
+    """
+    marr = np.logspace(mmin,m,num=500)
+    nhi = np.trapz(himf(marr,x[0],10**x[1],x[2]),x=np.log10(marr),axis=0)
+    return nhi
+
+def sample_from_dist(func,xmin,xmax,size=1,cdf=False):
+    """
+    Sample from custom distribution.
+    
+    Parameters
+    ----------
+        func: distribution function.
+            The probability distribution function (cdf=False) or the cumulative distribution function (cdf=True).
+        xmin: float.
+            The minimum value to sample from
+        xmax: float. 
+            The maximum value to sample from
+        size: int or list of int, default 1.
+            The size of the sample array
+        cdf: bool, default False.
+            Wheter PDF or CDF is used.
+            
+    Returns
+    -------
+        sample: float array.
+            The random sample following the input distribution function.
+    """
+    xarr = np.linspace(xmin,xmax,1001)
+    if cdf is False:
+        pdf_arr = func(xarr)
+        cdf_arr = np.cumsum(pdf_arr)
+    else:
+        cdf_arr = func(xarr)
+    cdf_arr -= cdf_arr[0]
+    cdf_arr /= cdf_arr[-1]
+    cdf_inv = interp1d(cdf_arr,xarr)
+    sample = cdf_inv(np.random.uniform(low=0,high=1,size=size))
+    return sample

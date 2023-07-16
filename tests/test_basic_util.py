@@ -1,7 +1,7 @@
-from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat
+from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist
 import pytest
 import numpy as np
-from astropy.cosmology import Planck15
+from astropy.cosmology import Planck15,Planck18
 from scipy.signal import blackmanharris
 
 
@@ -10,6 +10,12 @@ lamb_21 = 0.21106114054160 # in meters
 def func(x,pars):
     a,b,c=pars
     return a*x**2+b*x+c
+
+def uniform_pdf(x):
+    return np.ones_like(x)
+
+def uniform_cdf(x):
+    return x
 
 def test_p2dim():
     '''
@@ -105,3 +111,28 @@ def test_get_conv_mat():
     conv_arr = np.convolve(test_w,test_x,mode='same')
     test_conv = get_conv_mat(test_w)@test_x
     assert np.allclose(conv_arr,test_conv)
+    
+def test_himf():
+    h_70 = Planck18.h/0.7
+    mmin=6
+    phi_star = 4.5*1e-3*h_70**3 # in Mpc-3 dex-1
+    m_star = np.log10(10**(9.94)/h_70**2)  # in log10 Msun
+    alpha = -1.25
+    himf_pars = [phi_star,m_star,alpha]
+    nhi,omegahi,psn = cal_himf(himf_pars,mmin,Planck18)
+    assert nhi == 0.13980687586146462
+    assert omegahi == 0.00036495842278914405
+    assert psn == 150.93927719814297
+    minput = np.linspace(mmin,11,500)
+    nhi_cumu = cumu_nhi_from_himf(minput,mmin,himf_pars)
+    assert nhi_cumu[0] == 0.0
+    assert np.allclose(nhi_cumu[-1],nhi)
+    
+def test_sample_from_dist():
+    test_sample = sample_from_dist(uniform_pdf,0,1,size=1000000,cdf=False)
+    count,_ = np.histogram(test_sample,bins=10)
+    assert (np.abs((count-len(test_sample)/10)/(len(test_sample)/10))>0.01).sum() == 0
+    test_sample = sample_from_dist(uniform_cdf,0,1,size=1000000,cdf=True)
+    count,_ = np.histogram(test_sample,bins=10)
+    assert (np.abs((count-len(test_sample)/10)/(len(test_sample)/10))>0.01).sum() == 0
+
