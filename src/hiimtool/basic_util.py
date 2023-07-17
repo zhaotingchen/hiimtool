@@ -6,6 +6,7 @@ from astropy import constants,units
 import re
 from scipy.ndimage import gaussian_filter
 from scipy.interpolate import interp1d
+from scipy.special import erf
 
 f_21 = 1420405751.7667 # in Hz
 
@@ -185,7 +186,8 @@ def delay_transform(vis,delta_ch,window):
     testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
     testarr_w = (np.fft.fft(testarr*window))
     renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
-    vis_f = (np.fft.fft(vis*window[:,None],axis=0)*delta_ch
+    window = np.broadcast_to(window,vis.shape)
+    vis_f = (np.fft.fft(vis*window,axis=0)*delta_ch
              *np.sqrt(renorm))
     return vis_f
 
@@ -322,3 +324,37 @@ def sample_from_dist(func,xmin,xmax,size=1,cdf=False):
     cdf_inv = interp1d(cdf_arr,xarr)
     sample = cdf_inv(np.random.uniform(low=0,high=1,size=size))
     return sample
+
+def busy_function_simple(xarr,par_a,par_b,par_c,width):
+    """
+    The simplified busy function that assumes mirror symmetry around x=0 [1].
+    
+   
+    .. math:: B_2(x) = \frac{a}{2} \times ({\rm erf}[b(w^2-x^2)]+1) \times (cx^2+1)
+    
+    
+    Parameters
+    ----------
+        xarr: float array. 
+            the input x values
+        par_a: float.
+            amplitude parameter
+        par_b: float.
+            b parameter that controls the sharpness of the double peaks
+        par_c: float.
+            c parameter that controls the height of the double peaks
+        width: float.
+            the width of the profile
+            
+    Returns
+    -------
+        b2x: float array.
+            the busy function values at xarr
+            
+    References
+    ----------
+    .. [1] Westmeier, T. et al., "The busy function: a new analytic function for describing the integrated 21-cm spectral profile of galaxies",
+           https://ui.adsabs.harvard.edu/abs/arXiv:1311.5308 .
+    """
+    b2x = (par_a/2*(erf(par_b*(width**2-xarr**2))+1)*(par_c*xarr**2+1))
+    return b2x
