@@ -1,8 +1,9 @@
-from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist
+from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple
 import pytest
 import numpy as np
 from astropy.cosmology import Planck15,Planck18
 from scipy.signal import blackmanharris
+from scipy.special import erf
 
 
 lamb_21 = 0.21106114054160 # in meters
@@ -136,3 +137,6 @@ def test_sample_from_dist():
     count,_ = np.histogram(test_sample,bins=10)
     assert (np.abs((count-len(test_sample)/10)/(len(test_sample)/10))>0.01).sum() == 0
 
+def test_busy_function_simple():
+    xarr = np.linspace(-10,10,101)
+    assert np.allclose(busy_function_simple(xarr,2,1,0,0),erf(-xarr**2)+1)
