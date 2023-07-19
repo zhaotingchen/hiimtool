@@ -360,6 +360,28 @@ def busy_function_simple(xarr,par_a,par_b,par_c,width):
     return b2x
 
 
+
+def dft_mat(num_ch):
+    """
+    The discrete Fourier transformation matrix.
+    
+    .. math:: F_{ab} = {\rm exp}[-2\pi i a*b/N ]
+    
+    Parameters
+    ----------
+        num_ch: int. 
+            the length of the axis to be transformed
+            
+    Returns
+    -------
+        kernel: complex array.
+            the DFT matrix
+    """
+    indx_arr = np.linspace(0,num_ch-1,num_ch)
+    kernel = np.exp(-2*np.pi*1j*indx_arr[:,None]*indx_arr[None,:]/num_ch)
+    return kernel
+
+ 
 def busy_function_0(xarr,par_a,par_b,par_c,width):
     """
     The symmetric busy function [1].
@@ -393,3 +415,4 @@ def busy_function_0(xarr,par_a,par_b,par_c,width):
     """
     b0x = (par_a/4*(erf(par_b*(width-xarr))+1)*(erf(par_b*(width+xarr))+1)*(par_c*xarr**2+1))
     return b0x
+
