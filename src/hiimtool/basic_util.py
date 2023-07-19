@@ -360,6 +360,7 @@ def busy_function_simple(xarr,par_a,par_b,par_c,width):
     return b2x
 
 
+
 def dft_mat(num_ch):
     """
     The discrete Fourier transformation matrix.
@@ -379,3 +380,39 @@ def dft_mat(num_ch):
     indx_arr = np.linspace(0,num_ch-1,num_ch)
     kernel = np.exp(-2*np.pi*1j*indx_arr[:,None]*indx_arr[None,:]/num_ch)
     return kernel
+
+ 
+def busy_function_0(xarr,par_a,par_b,par_c,width):
+    """
+    The symmetric busy function [1].
+    
+   
+    .. math:: B_0(x) = \frac{a}{4} \times ({\rm erf}[b(w-x)]+1) \times ({\rm erf}[b(w+x)]+1) \times (cx^2+1)
+    
+    
+    Parameters
+    ----------
+        xarr: float array. 
+            the input x values
+        par_a: float.
+            amplitude parameter
+        par_b: float.
+            b parameter that controls the sharpness of the double peaks
+        par_c: float.
+            c parameter that controls the height of the double peaks
+        width: float.
+            the width of the profile
+            
+    Returns
+    -------
+        b0x: float array.
+            the busy function values at xarr
+            
+    References
+    ----------
+    .. [1] Westmeier, T. et al., "The busy function: a new analytic function for describing the integrated 21-cm spectral profile of galaxies",
+           https://ui.adsabs.harvard.edu/abs/arXiv:1311.5308 .
+    """
+    b0x = (par_a/4*(erf(par_b*(width-xarr))+1)*(erf(par_b*(width+xarr))+1)*(par_c*xarr**2+1))
+    return b0x
+
