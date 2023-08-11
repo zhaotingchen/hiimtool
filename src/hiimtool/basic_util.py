@@ -198,7 +198,7 @@ def get_conv_mat(inp):
     '''
     num_grid = len(inp)
     indx_arr = np.linspace(np.linspace(0,num_grid-1,num_grid),np.linspace(-num_grid+1,0,num_grid),num_grid).T
-    window_pad = np.zeros(num_grid*2-1)
+    window_pad = np.zeros(num_grid*2-1).astype(inp.dtype)
     window_pad[(num_grid-1)//2:((num_grid-1)//2+num_grid)] = inp
     indx_arr = (indx_arr+num_grid-2+num_grid%2).astype('int')
     return window_pad[indx_arr]
