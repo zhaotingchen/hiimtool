@@ -28,11 +28,11 @@ def tidy_config_path(config):
     
     #append the dirs
     for key in dirs_to_append:
-        if config['FILE'][key][0]=='/':
+        if config['OUTPUT'][key][0]=='/':
             slash=''
         else:
             slash='/'
-        config['FILE'][key] = config['FILE']['work_dir']+slash+config['FILE'][key]
+        config['OUTPUT'][key] = config['FILE']['work_dir']+slash+config['OUTPUT'][key]
     return config
 
 def get_file_setup(file):
