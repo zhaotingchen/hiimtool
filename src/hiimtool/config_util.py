@@ -19,15 +19,12 @@ def tidy_config_path(config):
         if config['FILE'][key][-1]=='/':
             config['FILE'][key] = config['FILE'][key][:-1]
     
-    #list of dir names to be appended to work_dir
-    dirs_to_append = ('LOG','SCRIPT')
-    
     #get absolute path if work_dir is just ./
     if config['FILE']['work_dir'] == '.':
         config['FILE']['work_dir'] = os.getcwd()
     
     #append the dirs
-    for key in dirs_to_append:
+    for key in config['OUTPUT'].keys():
         if config['OUTPUT'][key][0]=='/':
             slash=''
         else:
