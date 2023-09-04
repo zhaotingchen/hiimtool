@@ -7,6 +7,7 @@ import psutil
 import torch
 from torch.fft import fft,fftn,fftfreq
 from .basic_util import Specs,f_21
+from torch import histogramdd
 
 _range = range
 
