@@ -342,3 +342,13 @@ def target_ms_list(working_ms,target_names):
         target_ms.append(ms_name)
 
     return target_ms
+
+def get_nscan(master_ms):
+
+    """ 
+    Return the number of scans in the measurementset.
+    """
+    tab = table(master_ms,ack=False)
+    num_scan = len(np.unique(tab.getcol('SCAN_NUMBER')))
+
+    return num_scan
