@@ -12,7 +12,7 @@ import datetime
 import re
 import pickle
 import configparser
-from pyrap.tables import table
+from casacore.tables import table
 from astropy.coordinates import SkyCoord
 
 meerkat_bands = [(815e6,1080e6,'UHF'),
