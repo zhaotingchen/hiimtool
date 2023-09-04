@@ -28,11 +28,11 @@ def tidy_config_path(config):
     
     #append the dirs
     for key in dirs_to_append:
-        if config['FILE'][key][0]=='/':
+        if config['OUTPUT'][key][0]=='/':
             slash=''
         else:
             slash='/'
-        config['FILE'][key] = config['FILE']['work_dir']+slash+config['FILE'][key]
+        config['OUTPUT'][key] = config['FILE']['work_dir']+slash+config['OUTPUT'][key]
     return config
 
 def get_file_setup(file):
@@ -70,6 +70,12 @@ def gen_syscall(calltype,
         syscall = syscall + ' casa --log2term --nogui -c '
         syscall = syscall + script + ' ' + args
         return syscall
+    if calltype == 'env':
+        syscall = 'source ' + config['FILE']['bash'] + ' \n'
+        syscall = syscall + 'source activate ' + config['FILE']['env']
+        syscall = syscall + ' \n'
+        syscall = syscall + 'python ' + script + ' ' +args
+        return syscall
 
 def job_handler(syscall,
                 jobname,
@@ -91,8 +97,8 @@ def job_handler(syscall,
     slurm_cpus = slurm_config['CPUS']
     slurm_mem = slurm_config['MEM']
     
-    slurm_runfile = config['FILE']['script']+'/slurm_'+jobname+'.sh'
-    slurm_logfile = config['FILE']['log']+'/slurm_'+jobname+'.log'
+    slurm_runfile = config['OUTPUT']['script']+'/slurm_'+jobname+'.sh'
+    slurm_logfile = config['OUTPUT']['log']+'/slurm_'+jobname+'.log'
     run_command = jobname+"=`sbatch "
     if dependency:
         #run_command += "-d afterok:${"+dependency+"} "
@@ -114,6 +120,7 @@ def job_handler(syscall,
         'echo "****ELAPSED "$SECONDS"s '+jobname+'"\n'])
 #           'sleep 10\n'])
     f.close()
+    #os.chmod(slurm_runfile, 0o444)
     #make_executable(slurm_runfile)
     run_command += '\n'
 
