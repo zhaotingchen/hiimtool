@@ -43,16 +43,15 @@ def get_file_setup(file):
     first_line = first_line.split(', ')
     file_setup['calltype'] = first_line[0]
     file_setup['jobtype'] = first_line[1]
-    if len(first_line)>2:
-        file_setup['args'] = first_line[2]
-    else:
-        file_setup['args'] = ''
+    file_setup['args'] = first_line[2]
+    file_setup['loop'] = first_line[3]
     return file_setup
 
 def gen_syscall(calltype,
                 script,
                 config,
                 args='',
+                loop=0,
                ):
     '''
     Create a command for running a slurm job.
@@ -60,19 +59,36 @@ def gen_syscall(calltype,
     '''
     sif_exec = 'singularity exec '
     if calltype == 'container':
-        return sif_exec+config['FILE']['container']+' python '+script+' '+args
+        syscall = sif_exec+config['FILE']['container']+' python '+script+' '
+        if loop >0:
+            syscall_tot=''
+            for i in range(loop):
+                syscall_tot += syscall + str(i)+' '+args + ' \n'
+        else:
+            syscall_tot = syscall + args
+        return syscall_tot
     if calltype == 'mpicasa':
         syscall = config['FILE']['mpicasa']+ ' singularity exec '
         syscall = syscall + config['FILE']['casa']
         syscall = syscall + ' casa --log2term --nogui -c '
-        syscall = syscall + script + ' ' + args
-        return syscall
+        syscall = syscall + script + ' '
+        if loop >0:
+            syscall_tot=''
+            for i in range(loop):
+                syscall_tot += syscall + str(i)+' '+args + ' \n'
+        else:
+            syscall_tot = syscall + args
+        return syscall_tot
     if calltype == 'env':
         syscall = 'source ' + config['FILE']['bash'] + ' \n'
         syscall = syscall + 'source activate ' + config['FILE']['env']
         syscall = syscall + ' \n'
-        syscall = syscall + 'python ' + script + ' ' +args
-        return syscall
+        syscall = syscall + 'python ' + script + ' ' 
+        if loop >0:
+            syscall_tot=''
+            for i in range(loop):
+                syscall_tot += syscall + str(i)+' '+args + ' \n'
+        return syscall_tot
 
 def job_handler(syscall,
                 jobname,
