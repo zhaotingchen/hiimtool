@@ -89,6 +89,8 @@ def gen_syscall(calltype,
             syscall_tot=''
             for i in range(loop):
                 syscall_tot += syscall + str(i)+' '+args + ' \n'
+        else:
+            syscall_tot = syscall + args
         return syscall_tot
     if calltype == 'envarray':
         syscall = 'source ' + config['FILE']['bash'] + ' \n'
