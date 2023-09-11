@@ -160,5 +160,20 @@ def ini_to_py(config,filename):
     with open(filename, 'a') as file:
         for section in config.sections():
             for key,val in config[section].items(): 
-                file.write(section+'_'+key+' = \''+val+'\'\n')
+                file.write(section+'_'+key.replace('-','_')+' = \''+val+'\'\n')
     return 1
+
+def gen_syscall_wsclean(msfile,
+                config,
+                file_setup,
+               ):
+    '''
+    Create a command for running a slurm job.
+    Adapted from oxcat.
+    '''
+    sif_exec = 'singularity exec '
+    syscall = sif_exec + config['FILE']['wsclean']+' wsclean '
+    for key,val in file_setup.items():
+        syscall += '-'+key + ' ' + val + ' '
+    syscall += msfile + ' \n'
+    return syscall
