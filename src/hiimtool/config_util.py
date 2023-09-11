@@ -51,6 +51,7 @@ def gen_syscall(calltype,
                 script,
                 config,
                 args='',
+                jobtype='',
                 loop=0,
                ):
     '''
@@ -88,7 +89,17 @@ def gen_syscall(calltype,
             syscall_tot=''
             for i in range(loop):
                 syscall_tot += syscall + str(i)+' '+args + ' \n'
+        else:
+            syscall_tot = syscall + args
         return syscall_tot
+    if calltype == 'envarray':
+        syscall = 'source ' + config['FILE']['bash'] + ' \n'
+        syscall = syscall + 'source activate ' + config['FILE']['env']
+        syscall = syscall + ' \n'
+        syscall = syscall + 'python ' + script + ' '
+        syscall = syscall + '$SLURM_ARRAY_TASK_ID ' + config['SLURM_'+jobtype]['ARRAY']
+        syscall = syscall + ' ' + args
+        return syscall
 
 def job_handler(syscall,
                 jobname,
@@ -109,6 +120,11 @@ def job_handler(syscall,
     slurm_nodes = slurm_config['NODES']
     slurm_cpus = slurm_config['CPUS']
     slurm_mem = slurm_config['MEM']
+    if 'ARRAY' in slurm_config.keys():
+        slurm_array = slurm_config['ARRAY']
+        slurm_array = '#SBATCH --array=0-'+str(int(slurm_array)-1)+' \n'
+    else:
+        slurm_array = ''
     
     slurm_runfile = config['OUTPUT']['script']+'/slurm_'+jobname+'.sh'
     slurm_logfile = config['OUTPUT']['log']+'/slurm_'+jobname+'.log'
@@ -128,6 +144,7 @@ def job_handler(syscall,
         '#SBATCH --cpus-per-task='+slurm_cpus+'\n',
         '#SBATCH --mem='+slurm_mem+'\n',
         '#SBATCH --output='+slurm_logfile+'\n',
+        slurm_array,
         'SECONDS=0\n',
         syscall+'\n',
         'echo "****ELAPSED "$SECONDS"s '+jobname+'"\n'])
