@@ -118,6 +118,13 @@ def get_antnames(master_ms):
     ant_tab.close()
     return ant_names
 
+def get_chanfreq(master_ms):
+    """ Returns the frequencies of the channels """
+    spw_table = table(master_ms+'/SPECTRAL_WINDOW',ack=False)
+    chans = spw_table.getcol('CHAN_FREQ')[0]
+    return chans
+    
+
 def get_fields(master_ms):
 
     """ Returns lists of directions, names and integer source IDs
