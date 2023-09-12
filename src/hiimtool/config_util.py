@@ -100,6 +100,14 @@ def gen_syscall(calltype,
         syscall = syscall + '$SLURM_ARRAY_TASK_ID ' + config['SLURM_'+jobtype]['ARRAY']
         syscall = syscall + ' ' + args
         return syscall
+    if calltype=='envmpi':
+        num_core = int(config['SLURM_'+jobtype]['ntasks']*int(config['SLURM_'+jobtype]['CPUS']))
+        syscall = 'source ' + config['FILE']['bash'] + ' \n'
+        syscall = syscall + 'source activate ' + config['FILE']['env']
+        syscall = syscall + ' \n'
+        syscall += 'module load ' + config['FILE']['mpimod'] + ' \n'
+        syscall += 'mpirun --mca btl vader,self -n '+str(num_core)+' python '+ script + ' ' + args
+        return syscall
 
 def job_handler(syscall,
                 jobname,
