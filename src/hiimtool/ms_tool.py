@@ -393,3 +393,32 @@ def get_refant(master_ms,field_id,ref_pool):
     ranked_list = ','.join(ranked_list)
 
     return ranked_list
+
+def get_secondaries(master_ms,
+                secondary_state,
+                field_dirs,
+                field_names,
+                field_ids):
+
+    """ Automatically identify secondary calibrators from master_ms """
+
+    secondary_ids = []
+    secondary_names = []
+    secondary_dirs = []
+
+    main_tab = table(master_ms,ack=False)
+    for i in range(0,len(field_ids)):
+        field_dir = field_dirs[i]
+        field_name = field_names[i]
+        field_id = field_ids[i]
+        sub_tab = main_tab.query(query='FIELD_ID=='+str(field_id))
+        states = np.unique(sub_tab.getcol('STATE_ID'))
+        for state in states:
+            if state == secondary_state:
+                secondary_dirs.append(field_dir[0].tolist())
+                secondary_names.append(field_name)
+                secondary_ids.append(str(field_id))
+        sub_tab.close()
+    main_tab.close()
+
+    return secondary_dirs, secondary_names, secondary_ids
