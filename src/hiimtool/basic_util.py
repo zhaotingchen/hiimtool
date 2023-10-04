@@ -416,3 +416,33 @@ def busy_function_0(xarr,par_a,par_b,par_c,width):
     b0x = (par_a/4*(erf(par_b*(width-xarr))+1)*(erf(par_b*(width+xarr))+1)*(par_c*xarr**2+1))
     return b0x
 
+def flux_model(nunu0,iref,coeffs,log=False):
+    '''
+    flux model using polynomial or log-polynomial
+    
+    Parameters
+    ----------
+        nunu0: float array. 
+            the input frequency over the reference frequency
+        iref: float.
+            the flux at the reference frequency
+        coeffs: float array.
+            the coefficients of the (log-)polynomial. 0th term first.
+        log: bool, default False.
+            whether to use log-polynomial or polynomial.
+            
+    Returns
+    -------
+        ifreq: float array.
+            the fluxes at the given frequencies
+    '''
+    if log:
+        exponent = np.sum([coeff*(np.log(nunu0)**(power))
+                       for power,coeff in enumerate(coeffs)],axis=0)
+        ifreq = iref*nunu0**exponent
+    else:
+        xarr = nunu0-1
+        polyterms = np.sum([coeff*((xarr)**(power+1))
+                       for power,coeff in enumerate(coeffs)],axis=0)
+        ifreq = iref+polyterms
+    return ifreq
