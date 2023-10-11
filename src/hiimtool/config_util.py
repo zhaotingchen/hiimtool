@@ -107,6 +107,16 @@ def gen_syscall(calltype,
         syscall = syscall + ' \n'
         syscall += 'module load ' + config['FILE']['mpimod'] + ' \n'
         syscall += 'mpirun --mca btl vader,self -n '+str(num_core)+' python '+ script + ' ' + args
+    if calltype=='containermpi':
+        num_core = int(config['SLURM_'+jobtype]['ntasks'])*int(config['SLURM_'+jobtype]['CPUS'])
+        syscall = 'module load '+config['FILE']['mpimod']+' \n'
+        syscall += 'mpirun -n '+str(num_core)+' '+sif_exec+config['FILE']['container']+' python '+script+' '
+        if loop >0:
+            syscall_tot=''
+            for i in range(loop):
+                syscall_tot += syscall + str(i)+' '+args + ' \n'
+        else:
+            syscall_tot = syscall + args
         return syscall
 
 def job_handler(syscall,
