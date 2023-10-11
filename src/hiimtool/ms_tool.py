@@ -360,47 +360,6 @@ def get_nscan(master_ms):
 
     return num_scan
 
-
-def get_refant(master_ms,field_id,ref_pool):
-
-    """ Sorts a list of antennas in order of increasing flagged percentages based on field_id """ 
-
-    ant_names = get_antnames(master_ms)
-    main_tab = table(master_ms,ack='False')
-    
-    pc_list = []
-    idx_list = []
-
-    main_tab = table(master_ms,ack=False)
-    for i in range(0,len(ref_pool)):
-        ant = ref_pool[i]
-        if ant in ant_names:
-            flag_count = 0
-            bl_count = 0
-            idx = ant_names.index(ant)
-            for field in field_id:
-                field_id_i = int(field)
-                mytaql = 'ANTENNA1=={idx} || ANTENNA2=={idx} && FIELD_ID=={field_id_i}'.format(**locals())
-                sub_tab = main_tab.query(query=mytaql)
-                flags = sub_tab.getcol('FLAG')
-                vals,counts = numpy.unique(flags,return_counts=True)
-                bl_count += flags.size
-                flag_count += numpy.sum(flags==True)
-            flag_pc = 100.*round(float(flag_count)/float(bl_count),8)
-            if flag_pc < 80.0:
-                pc_list.append(flag_pc)
-                idx_list.append(str(idx))
-            print('Antenna '+str(idx)+':'+ant+' is '+str(round(flag_pc,2))+chr(37)+' flagged')
-    pc_list = numpy.array(pc_list)
-    idx_list = numpy.array(idx_list)
-
-    ref_idx = idx_list[numpy.where(pc_list==(numpy.min(pc_list)))][0]
-
-    ranked_list = [x for _,x in sorted(zip(pc_list,idx_list))]
-    ranked_list = ','.join(ranked_list)
-
-    return ranked_list
-
 def get_secondaries(master_ms,
                 secondary_state,
                 field_dirs,

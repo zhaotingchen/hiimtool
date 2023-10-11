@@ -176,16 +176,23 @@ def ini_to_json(config_object):
     
     return output_dict
 
-def ini_to_py(config,filename):
+def ini_to_py(config,filename,append=False):
     """
     Convert a configparser object to python file 
     """
-    with open(filename, 'w') as file:
-        file.write('')
+    if not append:
+        with open(filename, 'w') as file:
+            file.write('')
+    with open(filename, 'r') as file:
+        file_content = file.readlines()
     with open(filename, 'a') as file:
         for section in config.sections():
             for key,val in config[section].items(): 
-                file.write(section+'_'+key.replace('-','_')+' = \''+val+'\'\n')
+                write_line=section+'_'+key.replace('-','_')+' = \''+val+'\'\n'
+                if append and (write_line in file_content):
+                    continue
+                else:
+                    file.write(write_line)
     return 1
 
 def gen_syscall_wsclean(msfile,
