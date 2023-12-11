@@ -348,3 +348,15 @@ def find_block_id(filename):
     return result
 
 vfind_id = np.vectorize(find_block_id)
+
+def bin_3d_to_cy_lowmem(ps3d,umode_i,umodeedges,weights=None):
+    num_ch = len(ps3d)
+    umode_i = umode_i.reshape(-1)
+    ps3d = ps3d.reshape((num_ch,-1))
+    pscy = np.zeros((num_ch,len(umodeedges)-1))
+    if weights is None:
+        weights = np.ones_like(ps3d)
+    for i in range(len(umodeedges)-1):
+        sel_indx = (umode_i>=umodeedges[i])*(umode_i<umodeedges[i+1])
+        pscy[:,i] = np.sum((ps3d*weights)[:,sel_indx],axis=-1)/np.sum(weights[:,sel_indx],axis=-1)
+    return pscy
