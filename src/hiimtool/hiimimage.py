@@ -377,7 +377,7 @@ def imdeconv(image,beam,psf,findx = 0):
 
 def grid_im(
     pos,len_side,N,weights=None,
-    device=None,norm=False,verbose=False,center=True):
+    device=None,norm=False,verbose=False,center=False):
     """Calculate the 1d power spectrum given a discrete sample of sources"""
     if verbose:
         start_time = time.time()
