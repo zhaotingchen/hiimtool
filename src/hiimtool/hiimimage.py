@@ -8,6 +8,7 @@ from itertools import product
 import psutil
 from .util import histogramdd
 from scipy.linalg import sqrtm
+from .basic_util import get_taper_renorm
 
 def get_power_cy(
     pos,kperpedges,len_side,N,weights=None,
@@ -35,11 +36,12 @@ def get_power_cy(
         window = np.ones(N[-1])
         renorm = 1.0
     else:
-        testarr_f = np.zeros(N[-1])
-        testarr_f[N[-1]//2]=1.0
-        testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
-        testarr_w = (np.fft.fft(testarr*window))
-        renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+        renorm = get_taper_renorm(window)
+        #testarr_f = np.zeros(N[-1])
+        #testarr_f[N[-1]//2]=1.0
+        #testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
+        #testarr_w = (np.fft.fft(testarr*window))
+        #renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
     window = torch.from_numpy(window).to(device)
     
     len_grid = len_side/(N-1)
@@ -152,11 +154,12 @@ def get_power_1d(
         window = np.ones(N[-1])
         renorm = 1.0
     else:
-        testarr_f = np.zeros(N[-1])
-        testarr_f[N[-1]//2]=1.0
-        testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
-        testarr_w = (np.fft.fft(testarr*window))
-        renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+        renorm = get_taper_renorm(window)
+        #testarr_f = np.zeros(N[-1])
+        #testarr_f[N[-1]//2]=1.0
+        #testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
+        #testarr_w = (np.fft.fft(testarr*window))
+        #renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
     window = torch.from_numpy(window).to(device)
     
     len_grid = len_side/(N-1)
@@ -272,11 +275,12 @@ def get_power_3d(
         window = np.ones(N[-1])
         renorm = 1.0
     else:
-        testarr_f = np.zeros(N[-1])
-        testarr_f[N[-1]//2]=1.0
-        testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
-        testarr_w = (np.fft.fft(testarr*window))
-        renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+        renorm = get_taper_renorm(window)
+        #testarr_f = np.zeros(N[-1])
+        #testarr_f[N[-1]//2]=1.0
+        #testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
+        #testarr_w = (np.fft.fft(testarr*window))
+        #renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
     window = torch.from_numpy(window).to(device)
     # grid the density field
     den= grid_im(pos,len_side,N,weights=weights,
@@ -449,11 +453,12 @@ def get_f_density(
         window = np.ones(N[-1])
         renorm = 1.0
     else:
-        testarr_f = np.zeros(N[-1])
-        testarr_f[N[-1]//2]=1.0
-        testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
-        testarr_w = (np.fft.fft(testarr*window))
-        renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+        renorm = get_taper_renorm(window)
+        #testarr_f = np.zeros(N[-1])
+        #testarr_f[N[-1]//2]=1.0
+        #testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
+        #testarr_w = (np.fft.fft(testarr*window))
+        #renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
     window = torch.from_numpy(window).to(device)
     # grid the density field
     den= grid_im(pos,len_side,N,weights=weights,
