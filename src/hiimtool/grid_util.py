@@ -11,7 +11,7 @@ import pickle
 import warnings
 from scipy.ndimage import gaussian_filter
 from scipy.signal import blackmanharris
-from .basic_util import chisq,Specs,f_21,slicer_vectorized,vfind_scan,fill_nan,vfind_id,itr_tnsq_avg
+from .basic_util import chisq,Specs,f_21,slicer_vectorized,vfind_scan,fill_nan,vfind_id,itr_tnsq_avg,get_taper_renorm
 from .ms_tool import read_ms
 
 def fitfunc(xarr,pars):
@@ -631,11 +631,12 @@ def get_rfisum(scan_indx,block_indx,block_id,submslist,save_dir,col,sel_ch,windo
     eta_arr = np.fft.fftfreq(220,d=delta_ch) # in seconds
     eta_arr = np.fft.fftshift(eta_arr)
     # delay transform
-    testarr_f = np.zeros(num_ch)
-    testarr_f[num_ch//2]=1.0
-    testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
-    testarr_w = (np.fft.fft(testarr*window))
-    renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+    #testarr_f = np.zeros(num_ch)
+    #testarr_f[num_ch//2]=1.0
+    #testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
+    #testarr_w = (np.fft.fft(testarr*window))
+    renorm = get_taper_renorm(window)
+    #renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
     f_len = 220
     num_sample = 100000
     test_std = np.fft.fft(np.random.normal(0,sigma_ch[:,None]/np.sqrt(2),(f_len,num_sample))*window[:,None]*np.sqrt(renorm)+1j*np.random.normal(0,sigma_ch[:,None]/np.sqrt(2),(f_len,num_sample))*window[:,None]*np.sqrt(renorm),axis=0).std()
@@ -740,11 +741,12 @@ def worker_rfi(scan_indx,submslist,uvedges,flag_frac,sel_ch,window,hor_low,hor_h
     eta_arr = np.fft.fftfreq(220,d=delta_ch) # in seconds
     eta_arr = np.fft.fftshift(eta_arr)
     # delay transform
-    testarr_f = np.zeros(num_ch)
-    testarr_f[num_ch//2]=1.0
-    testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
-    testarr_w = (np.fft.fft(testarr*window))
-    renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+    #testarr_f = np.zeros(num_ch)
+    #testarr_f[num_ch//2]=1.0
+    #testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
+    #testarr_w = (np.fft.fft(testarr*window))
+    #renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+    renorm = get_taper_renorm(window)
     f_len = 220
     num_sample = 100000
     test_std = np.fft.fft(
@@ -1136,11 +1138,12 @@ def worker_grid(ms_indx,submslist,uvedges,flag_frac,delay_sigma=5,sel_ch=None,co
     eta_arr = np.fft.fftfreq(num_ch,d=delta_ch) # in seconds
     eta_arr = np.fft.fftshift(eta_arr)
     # delay transform
-    testarr_f = np.zeros(num_ch)
-    testarr_f[num_ch//2]=1.0
-    testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
-    testarr_w = (np.fft.fft(testarr*window))
-    renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+    #testarr_f = np.zeros(num_ch)
+    #testarr_f[num_ch//2]=1.0
+    #testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
+    #testarr_w = (np.fft.fft(testarr*window))
+    #renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+    renorm = get_taper_renorm(window)
     f_len = num_ch
     num_sample = 100000
     test_std = np.fft.fft(

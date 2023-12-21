@@ -154,7 +154,7 @@ class MultiPower():
         den = np.transpose(field,axes=axis)
         den = torch.from_numpy(den).to(device)
         window = torch.from_numpy(window).to(device)
-        den = fftn(den*window[None,None,:])*renorm
+        den = fftn(den*window[None,None,:])*np.sqrt(renorm)
         # transpose back
         den = np.prod(self.len_grid)*den/self.vbox
         den = den.cpu().numpy()

@@ -175,6 +175,16 @@ def itr_tnsq_avg(in_arr,num_sp,max_it=5,sigma=5,frac_lim = 0.01):
         avg_init = avg
     return avg
 
+def get_taper_renorm(window):
+    N = len(window)
+    testarr_f = np.zeros(N)
+    testarr_f[N//2]=1.0
+    testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
+    testarr_w = (np.fft.fft(testarr*window))
+    renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+    return renorm
+    
+
 def delay_transform(vis,delta_ch,window):
     '''
     Perform delay transform along the first axis.
@@ -185,7 +195,7 @@ def delay_transform(vis,delta_ch,window):
     testarr_f[num_ch//2]=1.0
     testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
     testarr_w = (np.fft.fft(testarr*window))
-    renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+    renorm = get_taper_renorm(window)
     window = np.broadcast_to(window,vis.shape)
     vis_f = (np.fft.fft(vis*window,axis=0)*delta_ch
              *np.sqrt(renorm))
