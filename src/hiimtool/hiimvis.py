@@ -6,7 +6,7 @@ from itertools import product
 import psutil
 import torch
 from torch.fft import fft,fftn,fftfreq
-from .basic_util import Specs,f_21
+from .basic_util import Specs,f_21,get_taper_renorm
 from torch import histogramdd
 
 _range = range
@@ -87,11 +87,12 @@ def vis_power_3d(sp,vis_gridded,vis_2=None,
         window = np.ones(sp.num_channels)
         renorm = 1.0
     else:
-        testarr_f = np.zeros(sp.num_channels)
-        testarr_f[sp.num_channels//2]=1.0
-        testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
-        testarr_w = (np.fft.fft(testarr*window))
-        renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+        renorm = get_taper_renorm(window)
+        #testarr_f = np.zeros(sp.num_channels)
+        #testarr_f[sp.num_channels//2]=1.0
+        #testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
+        #testarr_w = (np.fft.fft(testarr*window))
+        #renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
     window = torch.from_numpy(window).to(device)
     if verbose:
         start_time = time.time()
@@ -143,11 +144,12 @@ def vis_power(sp,umode_i,umodeedges,vis_gridded,vis_2=None,
         window = np.ones(sp.num_channels)
         renorm = 1.0
     else:
-        testarr_f = np.zeros(sp.num_channels)
-        testarr_f[sp.num_channels//2]=1.0
-        testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
-        testarr_w = (np.fft.fft(testarr*window))
-        renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+        renorm = get_taper_renorm(window)
+        #testarr_f = np.zeros(sp.num_channels)
+        #testarr_f[sp.num_channels//2]=1.0
+        #testarr = np.fft.fftshift(np.fft.ifft(testarr_f))
+        #testarr_w = (np.fft.fft(testarr*window))
+        #renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
     window = torch.from_numpy(window).to(device)
     if verbose:
         start_time = time.time()

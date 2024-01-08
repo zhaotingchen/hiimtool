@@ -2,7 +2,8 @@
 Utility functions for analysing measurementset files.
 '''
 
-from casatools import ms,table
+from casacore.tables import table
+from casatools import ms
 import numpy as np
 import sys
 import time
@@ -12,7 +13,6 @@ import datetime
 import re
 import pickle
 import configparser
-from casacore.tables import table
 from astropy.coordinates import SkyCoord
 
 meerkat_bands = [(815e6,1080e6,'UHF'),

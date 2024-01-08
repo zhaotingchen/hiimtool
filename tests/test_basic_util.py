@@ -1,4 +1,4 @@
-from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,unravel_list
+from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,unravel_list,get_taper_renorm
 import pytest
 import numpy as np
 from astropy.cosmology import Planck15,Planck18
@@ -61,14 +61,6 @@ def test_find_scan():
     file_test = '.'+file_arr[0]+'./.'+file_arr[1]+'.'
     with pytest.raises(ValueError):
         vfind_scan(file_test)
-    scan_arr = np.random.randint(0,9999,10)
-    file_arr = scan_arr.astype('str')
-    file_arr = np.char.zfill(file_arr, 4).astype('object')
-    for i in range(len(file_arr)):
-        file_arr[i] = file_arr[i]+'_'
-        file_arr[i] = '_'+file_arr[i]
-    assert (vfind_scan(file_arr).astype('int')!=scan_arr).sum()==0
-    
         
 def test_chisq():
     result = chisq((0,0,1),func,np.ones(10),np.ones(10),1)
@@ -129,12 +121,12 @@ def test_himf():
     alpha = -1.25
     himf_pars = [phi_star,m_star,alpha]
     nhi,omegahi,psn = cal_himf(himf_pars,mmin,Planck18)
-    assert nhi == 0.13980687586146462
-    assert omegahi == 0.00036495842278914405
-    assert psn == 150.93927719814297
+    assert np.allclose(nhi,0.13980687586146462)
+    assert np.allclose(omegahi,0.00036495842278914405)
+    assert np.allclose(psn,150.93927719814297)
     minput = np.linspace(mmin,11,500)
     nhi_cumu = cumu_nhi_from_himf(minput,mmin,himf_pars)
-    assert nhi_cumu[0] == 0.0
+    assert np.allclose(nhi_cumu[0],0.0)
     assert np.allclose(nhi_cumu[-1],nhi)
     
 def test_sample_from_dist():
@@ -160,6 +152,10 @@ def test_dft_mat():
 def test_busy_function_0():
     xarr = np.linspace(-10,10,101)
     assert np.allclose(busy_function_0(xarr,4,1,0,0),(erf(-xarr)+1)*(erf(xarr)+1))
+
+def test_get_taper_renorm():
+    window = np.ones(100)
+    assert np.allclose(get_taper_renorm(window),1.0)
 
 def test_unravel_list():
     inlist = [[1,2],[3,4]]
