@@ -15,6 +15,16 @@ def chisq(pars,func,xarr,yarr,yerr):
     fitarr = func(xarr,pars)
     return 0.5*np.sum((fitarr-yarr)**2/yerr**2)
 
+def chisq_weighted(data,model,err,weights=None,axis=None):
+    """
+    Calculate the chisq with custom weights
+    """
+    if weights is None:
+        weights = np.ones_like(err)
+    result = ((((data-model)/err)**2*weights).sum(axis=axis)
+              /(weights).sum(axis=axis))
+    return result
+
 def slicer_vectorized(a,start,end):
     """A function for slicing through numpy arrays with string elements"""
     b = a.view((str,1)).reshape(len(a),-1)[:,start:end]
@@ -127,6 +137,11 @@ vfind_id = np.vectorize(find_block_id)
 def find_scan(filename):
     reex = '\.[0-9][0-9][0-9][0-9]\.'
     result = re.findall(reex, filename)
+    if len(result) == 0:
+        reex = '_[0-9][0-9][0-9][0-9]_'
+        result = re.findall(reex, filename)
+    if len(result) == 0:
+        raise ValueError("no scan id from filename "+filename)
     if result.count(result[0]) != len(result):
         raise ValueError("ambiguous scan id from filename "+filename)
     result = result[0]
@@ -446,3 +461,19 @@ def flux_model(nunu0,iref,coeffs,log=False):
                        for power,coeff in enumerate(coeffs)],axis=0)
         ifreq = iref+polyterms
     return ifreq
+
+def unravel_list(inp):
+    """
+    unravel a list to one-dimension. Should work for tuple as well.
+
+    Parameters
+    ----------
+        inp: iterable.
+
+    Returns
+    -------
+        out: list.
+            
+    """
+    out = [item for sublist in inp for item in sublist]
+    return out
