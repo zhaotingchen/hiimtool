@@ -1,4 +1,4 @@
-from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,get_taper_renorm
+from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,unravel_list,get_taper_renorm
 import pytest
 import numpy as np
 from astropy.cosmology import Planck15,Planck18
@@ -157,3 +157,6 @@ def test_get_taper_renorm():
     window = np.ones(100)
     assert np.allclose(get_taper_renorm(window),1.0)
 
+def test_unravel_list():
+    inlist = [[1,2],[3,4]]
+    assert unravel_list(inlist) == [1,2,3,4]
