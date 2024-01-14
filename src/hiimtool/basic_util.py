@@ -488,7 +488,7 @@ def unravel_list(inp):
     out = [item for sublist in inp for item in sublist]
     return out
 
-def cal_cov_simple(data):
+def cal_cov_simple(inp):
     '''
     Calculate the covariance of a data vector.
     
@@ -500,6 +500,7 @@ def cal_cov_simple(data):
     -------
         cov: numpy array.
     '''
+    data = inp.copy()
     data = data.reshape((len(data),-1))
     data -= data.mean(axis=-1)[:,None]
     cov = np.mean(data[:,None,:]*data[None,:,:],axis=-1)
