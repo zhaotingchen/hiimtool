@@ -90,6 +90,7 @@ class MultiPower():
                  norm=False,
                  device=None,
                  los_0=None,
+                 density=False,
                 ):
         self.pos = pos.reshape((-1,3))
         self.len_side = len_side
@@ -120,13 +121,14 @@ class MultiPower():
             
         self.los_axis = los_axis
         self.norm=norm
+        self.density=density
         if device is None:
             device = 'cpu'
         self.device = device
         self.los_0 = los_0
 
     def grid_field(self,field):
-        den= grid_im(self.pos,self.len_side,self.N_side,weights=field,
+        den= grid_im(self.pos,self.len_side,self.N_side,weights=field,density=self.density,
                    verbose=self.verbose,norm=self.norm,device=self.device)
         return den
 
