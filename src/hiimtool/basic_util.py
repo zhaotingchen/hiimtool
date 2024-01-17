@@ -456,3 +456,10 @@ def flux_model(nunu0,iref,coeffs,log=False):
                        for power,coeff in enumerate(coeffs)],axis=0)
         ifreq = iref+polyterms
     return ifreq
+
+def get_mask_renorm_simple(mask):
+    testarr = np.ones_like(mask)
+    testarr_f = np.fft.fftn(testarr)
+    testarr_w = np.fft.fftn(testarr*mask)
+    renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+    return renorm

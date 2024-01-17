@@ -2,6 +2,7 @@ import pytest
 import configparser
 import sys
 import os
+from hiimtool.config_util import tidy_config_path
 
 def test_tidy_config_path():
     config = configparser.ConfigParser()
