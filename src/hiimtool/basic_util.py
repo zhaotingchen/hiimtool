@@ -472,6 +472,14 @@ def flux_model(nunu0,iref,coeffs,log=False):
         ifreq = iref+polyterms
     return ifreq
 
+
+def get_mask_renorm_simple(mask):
+    testarr = np.ones_like(mask)
+    testarr_f = np.fft.fftn(testarr)
+    testarr_w = np.fft.fftn(testarr*mask)
+    renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
+    return renorm
+
 def unravel_list(inp):
     """
     unravel a list to one-dimension. Should work for tuple as well.
@@ -505,3 +513,4 @@ def cal_cov_simple(inp):
     data -= data.mean(axis=-1)[:,None]
     cov = np.mean(data[:,None,:]*data[None,:,:],axis=-1)
     return cov
+
