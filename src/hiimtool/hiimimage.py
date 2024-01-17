@@ -380,7 +380,7 @@ def imdeconv(image,beam,psf,findx = 0):
     return trecov
 
 def grid_im(
-    pos,len_side,N,weights=None,
+    pos,len_side,N,weights=None,density=False,
     device=None,norm=False,verbose=False,center=False):
     """Calculate the 1d power spectrum given a discrete sample of sources"""
     if verbose:
@@ -410,6 +410,10 @@ def grid_im(
     pos = torch.from_numpy(pos).to(device)
     weights = torch.from_numpy(weights).to(device)
     den,bins = histogramdd(pos.T,bins=[lenxbin,lenybin,lenzbin],weights=weights)
+    if density:
+        count,_ = histogramdd(pos.T,bins=[lenxbin,lenybin,lenzbin],weights=torch.ones_like(weights))
+        den /= count
+        den[den!=den] = 0.0
     #clear memory
     bins = 0.0
     pos = 0

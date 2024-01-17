@@ -15,6 +15,16 @@ def chisq(pars,func,xarr,yarr,yerr):
     fitarr = func(xarr,pars)
     return 0.5*np.sum((fitarr-yarr)**2/yerr**2)
 
+def chisq_weighted(data,model,err,weights=None,axis=None):
+    """
+    Calculate the chisq with custom weights
+    """
+    if weights is None:
+        weights = np.ones_like(err)
+    result = ((((data-model)/err)**2*weights).sum(axis=axis)
+              /(weights).sum(axis=axis))
+    return result
+
 def slicer_vectorized(a,start,end):
     """A function for slicing through numpy arrays with string elements"""
     b = a.view((str,1)).reshape(len(a),-1)[:,start:end]
@@ -127,6 +137,11 @@ vfind_id = np.vectorize(find_block_id)
 def find_scan(filename):
     reex = '\.[0-9][0-9][0-9][0-9]\.'
     result = re.findall(reex, filename)
+    if len(result) == 0:
+        reex = '_[0-9][0-9][0-9][0-9]_'
+        result = re.findall(reex, filename)
+    if len(result) == 0:
+        raise ValueError("no scan id from filename "+filename)
     if result.count(result[0]) != len(result):
         raise ValueError("ambiguous scan id from filename "+filename)
     result = result[0]
@@ -457,9 +472,45 @@ def flux_model(nunu0,iref,coeffs,log=False):
         ifreq = iref+polyterms
     return ifreq
 
+
 def get_mask_renorm_simple(mask):
     testarr = np.ones_like(mask)
     testarr_f = np.fft.fftn(testarr)
     testarr_w = np.fft.fftn(testarr*mask)
     renorm = (np.abs(testarr_f)**2).sum()/(np.abs(testarr_w)**2).sum()
     return renorm
+
+def unravel_list(inp):
+    """
+    unravel a list to one-dimension. Should work for tuple as well.
+
+    Parameters
+    ----------
+        inp: iterable.
+
+    Returns
+    -------
+        out: list.
+            
+    """
+    out = [item for sublist in inp for item in sublist]
+    return out
+
+def cal_cov_simple(inp):
+    '''
+    Calculate the covariance of a data vector.
+    
+    Parameters
+    ----------
+        data: numpy array. The first axis must of the number of measurements.
+
+    Returns
+    -------
+        cov: numpy array.
+    '''
+    data = inp.copy()
+    data = data.reshape((len(data),-1))
+    data -= data.mean(axis=-1)[:,None]
+    cov = np.mean(data[:,None,:]*data[None,:,:],axis=-1)
+    return cov
+

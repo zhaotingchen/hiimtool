@@ -117,7 +117,7 @@ def gen_syscall(calltype,
                 syscall_tot += syscall + str(i)+' '+args + ' \n'
         else:
             syscall_tot = syscall + args
-        return syscall
+        return syscall_tot
 
 def job_handler(syscall,
                 jobname,

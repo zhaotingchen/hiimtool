@@ -1,4 +1,4 @@
-from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,get_taper_renorm,get_mask_renorm_simple
+from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,unravel_list,get_taper_renorm,cal_cov_simple,get_mask_renorm_simple
 import pytest
 import numpy as np
 from astropy.cosmology import Planck15,Planck18
@@ -161,3 +161,13 @@ def test_get_mask_renorm_simple():
     window = np.ones(100)
     assert np.allclose(get_mask_renorm_simple(window),1.0)
 
+def test_unravel_list():
+    inlist = [[1,2],[3,4]]
+    assert unravel_list(inlist) == [1,2,3,4]
+
+def test_cal_cov_simple():
+    rand = np.random.normal(size=(1,100000))
+    rand = np.vstack((rand,-rand))
+    cov_test = cal_cov_simple(rand)
+    cov_test /= np.sqrt(np.diagonal(cov_test))[:,None]*np.sqrt(np.diagonal(cov_test))[None,:]
+    assert np.allclose(cov_test,[[1,-1],[-1,1]])

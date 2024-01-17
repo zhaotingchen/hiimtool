@@ -9,19 +9,13 @@ def test_tidy_config_path():
     config['FILE'] = {'1':'test/',
                       'LOG':'logs',
                       'SCRIPT':'scripts',
-                      'work_dir':'./'
+                      'work_dir':'./',
                      }
+    config['OUTPUT'] = {'test':'something'}
     config = tidy_config_path(config)
     for val in list(config['FILE'].values()):
         assert val[-1]!='/'
-    assert config['FILE']['LOG'] == os.getcwd()+'/'+'logs'
-    assert config['FILE']['SCRIPT'] == os.getcwd()+'/'+'scripts'
-    config = configparser.ConfigParser()
-    config['FILE'] = {'1':'test/',
-                      'LOG':'logs/',
-                      'SCRIPT':'scripts/',
-                      'work_dir':'./'
-                     }
-    config = tidy_config_path(config)
-    assert config['FILE']['LOG'] == os.getcwd()+'/'+'logs'
-    assert config['FILE']['SCRIPT'] == os.getcwd()+'/'+'scripts'
+    for val in list(config['OUTPUT'].values()):
+        assert val[-1]!='/'
+    assert config['FILE']['work_dir'] == os.getcwd()
+    assert config['OUTPUT']['test'] == os.getcwd()+'/'+'something'
