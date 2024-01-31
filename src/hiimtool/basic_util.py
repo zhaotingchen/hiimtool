@@ -505,3 +505,10 @@ def cal_cov_simple(inp):
     data -= data.mean(axis=-1)[:,None]
     cov = np.mean(data[:,None,:]*data[None,:,:],axis=-1)
     return cov
+
+def strlist_to_str(inp):
+    out = ''
+    for vals in np.array(inp).ravel():
+        out += vals+','
+    out = out[:-1]
+    return out

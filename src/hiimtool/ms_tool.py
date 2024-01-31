@@ -139,13 +139,16 @@ def get_fields(master_ms):
     field_tab.close()
     return field_dirs,field_names,field_ids
 
-def get_states(master_ms,
-                primary_intent,
-                secondary_intent,
-                target_intent):
+def get_states(
+    master_ms,
+    primary_intent,
+    secondary_intent,
+    target_intent,
+    polarization_intent=None,
+):
 
     """ Provide the partial string matches for primary, secondary and target scan
-    intents and the corresponding integer STATE_IDs are extracted from the STATE
+    intents (optionally polarization calibrator intent) and the corresponding integer STATE_IDs are extracted from the STATE
     table, along with any UNKNOWN states.
     Modified from [oxcat](https://github.com/IanHeywood/oxkat).
     """
@@ -157,6 +160,7 @@ def get_states(master_ms,
     target_state = []
     primary_state = []
     secondary_state = []
+    pol_state = []
     unknown_state = []
     for i in range(0,len(modes)):
         if modes[i] == target_intent:
@@ -165,10 +169,16 @@ def get_states(master_ms,
             primary_state.append(i)
         elif secondary_intent in modes[i]:
             secondary_state.append(i)
+        elif polarization_intent is not None:
+            if polarization_intent in modes[i]:
+                pol_state.append(i)
         elif modes[i] == 'UNKNOWN':
             unknown_state.append(i)
 
-    return primary_state, secondary_state, target_state, unknown_state
+    if polarization_intent is None:
+        return primary_state, secondary_state, target_state, unknown_state
+    else:
+        return primary_state, secondary_state, target_state, unknown_state, pol_state
 
 def get_primary_candidates(master_ms,
                 primary_state,
@@ -264,6 +274,37 @@ def get_targets(master_ms,
     main_tab.close()
 
     return target_dirs, target_names, target_ids
+
+def get_polarizations(master_ms,
+                pol_state,
+                field_dirs,
+                field_names,
+                field_ids):
+
+    """ Automatically identify polarization calibrators from master_ms
+    Copied from [oxcat](https://github.com/IanHeywood/oxkat).
+    """
+    
+    pol_ids = []
+    pol_names = []
+    pol_dirs = []
+
+    main_tab = table(master_ms,ack=False)
+    for i in range(0,len(field_ids)):
+        field_dir = field_dirs[i]
+        field_name = field_names[i]
+        field_id = field_ids[i]
+        sub_tab = main_tab.query(query='FIELD_ID=='+str(field_id))
+        states = np.unique(sub_tab.getcol('STATE_ID'))
+        for state in states:
+            if state == pol_state:
+                pol_dirs.append(field_dir[0].tolist())
+                pol_names.append(field_name)
+                pol_ids.append(str(field_id))
+        sub_tab.close()
+    main_tab.close()
+
+    return pol_dirs, pol_names, pol_ids
 
 def get_primary_tag(candidate_dirs,
                 candidate_names,
