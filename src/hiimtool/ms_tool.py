@@ -14,6 +14,7 @@ import re
 import pickle
 import configparser
 from astropy.coordinates import SkyCoord
+from casacore import quanta,measures
 
 meerkat_bands = [(815e6,1080e6,'UHF'),
     (856e6,1711e6,'L'),
@@ -429,3 +430,34 @@ def get_secondaries(master_ms,
     main_tab.close()
 
     return secondary_dirs, secondary_names, secondary_ids
+
+def get_para_angle(ant_pos,field_centre,time_step,unit='deg'):
+    '''
+    get parallalctic angle of an observation.
+    Adapted from [Codex Africanus](https://github.com/ratt-ru/codex-africanus/blob/c823ef364e7b62e4d3ce527b8ccdec0b4115e3ff/africanus/rime/parangles.py).
+
+    Parameters
+    ----------
+        ant_pos: casa record
+            The position of the antenna. Can be read from `casatools.msmetadata.antennaposition`.
+
+        field_centre: casa record
+            The phase centre of the observation. Assumed to also be the pointing centre. Can be read from `casatools.msmetadata.phasecenter`.
+
+        time_step: float.
+            The time of the observation, in UTC scale and MJD second format.
+
+        unit: str, default "deg".
+            The unit of the angle returned. Can be "deg" or "rad".
+    
+    Returns
+    -------
+        para_angle: float.
+            The parallactic angle of the observation in specificed unit.
+    '''
+    meas_serv = measures.measures()
+    zenith = meas_serv.direction('AZELGEO', '0deg', '90deg')
+    meas_serv.do_frame(meas_serv.epoch("UTC", quanta.quantity(time_step, "s")))
+    meas_serv.do_frame(ant_pos)
+    para_angle = meas_serv.posangle(field_centre, zenith).get_value(unit)
+    return para_angle
