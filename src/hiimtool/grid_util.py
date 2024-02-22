@@ -1,5 +1,6 @@
 from scipy.optimize import fmin
-from casatools import ms,table
+from casatools import ms,msmetadata
+from casacore.tables import table
 import numpy as np
 import sys
 import time
@@ -12,7 +13,7 @@ import warnings
 from scipy.ndimage import gaussian_filter
 from scipy.signal import blackmanharris
 from .basic_util import chisq,Specs,f_21,slicer_vectorized,vfind_scan,fill_nan,vfind_id,itr_tnsq_avg,get_taper_renorm
-from .ms_tool import read_ms
+from .ms_tool import read_ms,get_para_angle
 
 def fitfunc(xarr,pars):
     '''
@@ -1263,3 +1264,202 @@ def worker_grid(ms_indx,submslist,uvedges,flag_frac,delay_sigma=5,sel_ch=None,co
         print('Finished block', block,'Scan',scan,
               datetime.datetime.now().time().strftime("%H:%M:%S"))
     return vis,count
+
+def worker_split(
+    filename,
+    uvedges,
+    flag_frac,
+    sel_ch,
+    sample_indx,
+    num_sub_sample,
+    save_dir=None,
+    stokes='I',
+    col='corrected_data',
+    fill=False,
+    verbose=False,
+):
+    '''
+    Returns the gridded visibility sum and the baseline number counts of a given scan for a ms file.
+    The gridded visibilities are split into sub-samples, useful for e.g. jackknife tests.
+    Note that the output is **SUMMED** visibility not average!
+
+    Parameters
+    ----------
+        filename: str
+            The input ms file.
+        
+        uvedges: numpy array
+            The edges of the uv grids in wavelength unit (dimensionless, not in metres)
+        
+        flag_frac: float
+            If a baseline has frag_frac or larger fraction of frequency channels flagged, then this baseline is neglected
+        
+        sel_ch: float array
+            The channel selection function to pass into :py:meth:`casatools.selectchannel`. 
+            See https://casadocs.readthedocs.io/en/stable/api/tt/casatools.ms.html#casatools.ms.ms.selectchannel .
+
+        sample_indx: int array
+            An indx array specifying which sub-sample the data points belong to. Must be in the shape of (num_time,num_antpair).
+
+        num_sub_sample: int
+            The total number of sub samples to split into.
+
+        save_dir: str, default None
+            The file directory in which the results are saved. No saves if None.
+        
+        stokes: string, default "I"
+            Which Stokes parameter to grid. Currently only support I and V.
+        
+        col: string, default "corrected_data"
+            Which data column to read. Default reads the corrected_data column after selfcal.
+            
+        fill: Boolean, default False
+            Whether to fill flagged channels (after `frag_frac` exclusion) with the nearest neighbours
+        
+        verbose: Boolean, default False
+            Whether to print information about time and which block and scan the function is reading.
+         
+    Returns
+    -------
+        vis_gridded: complex array of shape (num_sub_sample,num_ch,num_uv,num_uv).
+        count: float array. If `fill=True` then shape is (num_sub_sample,num_uv,num_uv), else (num_sub_sample,num_ch,num_uv,num_uv).
+    '''
+    # note that here the output is the sum of the vis not the average
+    scan_id = str(vfind_scan(filename))
+    block_id = str(vfind_id(filename))
+    if verbose:
+        print('Gridding...','Block', block_id,'Scan', scan_id,datetime.datetime.now().time().strftime("%H:%M:%S"))
+    
+    
+    if stokes=='I':
+        pol = (0,3)
+        sign = np.array([1,1])
+    elif stokes=='V':
+        pol = (1,2)
+        sign = np.array([-1j,1j])
+    elif stokes=='Q':
+        pol = (0,3)
+        sign = np.array([1,-1])
+        
+    msset = ms()
+    msset.open(filename)
+    #if sel_ch is not None:
+    #    msset.selectchannel(sel_ch[0],sel_ch[1],sel_ch[2],sel_ch[3])
+    metadata = msset.metadata()
+    if sel_ch is not None:
+        freq_arr = metadata.chanfreqs(0)[sel_ch[1]:sel_ch[1]+sel_ch[0]] # get the frequencies
+    else:
+        freq_arr = metadata.chanfreqs(0)
+    msset.close()
+    num_ch = len(freq_arr)    
+
+    #get all the data needed
+    data,uarr,varr,flag,ant1,ant2,timearr = read_ms(
+        filename,
+        [col,'u','v','flag','antenna1','antenna2','time'],
+        None,
+        verbose
+    )
+    if sel_ch is not None:
+        data = data[:,sel_ch[1]:sel_ch[1]+sel_ch[0],:]
+        flag = flag[:,sel_ch[1]:sel_ch[1]+sel_ch[0],:]
+    
+    z_0 = 2*f_21/(freq_arr[0]+freq_arr[-1])-1
+    lamb_0 = (constants.c/f_21/units.Hz).to('m').value*(1+z_0)
+    # meter to wavelength
+    uarr /= lamb_0
+    varr /= lamb_0
+    flag_I = (flag[pol[0]]+flag[pol[1]])>0  # if XX or YY is flagged then I is flagged 
+    indx = flag_I.mean(axis=0)<flag_frac
+    
+    num_time_step = np.unique(timearr).size
+    timearr = timearr.reshape((num_time_step,-1))
+    ant1 = ant1.reshape((num_time_step,-1))
+    ant1 = ant1[0]
+    ant2 = ant2.reshape((num_time_step,-1))
+    ant2 = ant2[0]
+    timearr = timearr[:,0]
+    flag = flag.reshape((len(flag),num_ch,num_time_step,len(ant1)))
+    flag_I = flag_I.reshape((num_ch,num_time_step,len(ant1)))
+    data = data.reshape((len(data),num_ch,num_time_step,len(ant1)))
+    indx = indx.reshape((num_time_step,-1))
+    uarr = uarr.reshape((num_time_step,-1))
+    varr = varr.reshape((num_time_step,-1))
+    
+    data = data[:,:,indx] 
+    flag = flag[:,:,indx]
+    uarr = uarr[indx]
+    varr = varr[indx]
+    flag_I = flag_I[:,indx]
+    sample_indx = sample_indx[indx]
+
+    if fill:
+        for p_indx in pol: # XX and YY
+            freqfill,farr,rowarr = fill_row(flag[p_indx])
+            data[p_indx,farr,rowarr] = data[p_indx,freqfill,rowarr] 
+        flag_I = np.zeros_like(flag_I) # if filled then all the channels are used
+
+    data = (data[pol[0]]*sign[0]+data[pol[1]]*sign[1])/2 # just keep I
+    
+    vis_gridded = np.zeros((num_sub_sample,num_ch,len(uvedges)-1,len(uvedges)-1),dtype='complex')
+    if fill:
+        count = np.zeros((num_sub_sample,len(uvedges)-1,len(uvedges)-1)) 
+    else:
+        count = np.zeros((num_sub_sample,num_ch,len(uvedges)-1,len(uvedges)-1))
+
+    for sub_indx in np.unique(sample_indx):
+        flag_sub = (sample_indx!=sub_indx)
+        vis_i,count_i = grid_vis(uarr,varr,uvedges,data,(flag_I+flag_sub)>0,fill)
+        vis_gridded[sub_indx] = vis_i
+        count[sub_indx] = count_i
+
+    if save_dir is not None:
+        np.save(save_dir+'vis_'+block_id+'_'+scan_id+'_'+stokes,vis_gridded)
+        np.save(save_dir+'count_'+block_id+'_'+scan_id+'_'+stokes,count)
+    if verbose:
+        print('Finished','Block', block_id,'Scan', scan_id,datetime.datetime.now().time().strftime("%H:%M:%S"))
+    return vis_gridded,count
+
+def split_para_angle(
+    sub_ms,ang_bin,stokes,col,uvedges,
+    num_ch,flag_frac,start_ch,scratch_dir,
+    fill=False,verbose=False
+):
+    num_sub_sample = len(ang_bin)-1
+    msmd = msmetadata()
+    msmd.open(sub_ms)
+    
+    maintab = table(sub_ms,ack=False)
+    ant1= maintab.getcol('ANTENNA1')
+    ant2= maintab.getcol('ANTENNA2')
+    timearr = maintab.getcol('TIME').T
+    maintab.close()
+    
+    num_time_step = np.unique(timearr).size
+    
+    timearr = timearr.reshape((num_time_step,-1))
+    ant1 = ant1.reshape((num_time_step,-1))
+    ant1 = ant1[0]
+    ant2 = ant2.reshape((num_time_step,-1))
+    ant2 = ant2[0]
+    timearr = timearr[:,0]
+    
+    fc_ms = msmd.phasecenter(0)
+    para_angle_arr = np.zeros((timearr.size,ant1.size))
+    for i in range(timearr.size):
+        for j in range(ant1.size):
+            pos_1 = msmd.antennaposition(ant1[j])
+            pos_2 = msmd.antennaposition(ant2[j])
+            para_angle_arr[i,j] = (
+                get_para_angle(pos_1,fc_ms,timearr[i])+
+                get_para_angle(pos_2,fc_ms,timearr[i])
+            )/2
+    jackknife_indx = (para_angle_arr[:,:,None]-ang_bin[None,None,:]>0).sum(axis=-1)-1
+
+    sel_ch = [num_ch,start_ch,1,1] # select num_ch channels, from 0th channel, with stepsize 1 and increment size 1
+    vis_i,count_i = worker_split(
+        sub_ms,uvedges,flag_frac,sel_ch,
+        jackknife_indx,num_sub_sample,scratch_dir,
+        stokes,col,fill,verbose
+    )
+    return vis_i,count_i
