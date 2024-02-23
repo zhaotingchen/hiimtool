@@ -512,3 +512,8 @@ def strlist_to_str(inp):
         out += vals+','
     out = out[:-1]
     return out
+
+def jy2_to_k2(sp,fov):
+    renorm = 1/fov/(sp.deltav_ch*sp.num_channels)**2*sp.X_0()**2*(sp.Y_0()*sp.deltav_ch*sp.num_channels)*(sp.lambda_0()**2*units.m**2/2/constants.k_B)**2*units.Jy**2
+    renorm = renorm.to('K^2').value
+    return renorm
