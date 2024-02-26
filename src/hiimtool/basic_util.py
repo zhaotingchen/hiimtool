@@ -507,6 +507,9 @@ def cal_cov_simple(inp):
     return cov
 
 def strlist_to_str(inp):
+    """
+    Unravel a list of strs into one comma-separated string.
+    """
     out = ''
     for vals in np.array(inp).ravel():
         out += vals+','
@@ -514,6 +517,28 @@ def strlist_to_str(inp):
     return out
 
 def jy2_to_k2(sp,fov):
+    '''
+    Parameters
+    ----------
+        sp: :class:`.Specs` object.
+
+        fov: float.
+        The effective (usually power-squared beam) field-of-view.
+
+    Returns
+    -------
+        renorm: float.
+        The conversion factor from Jy^2Hz^2 to K^2Mpc^3 for the delay power spectrum.
+    '''
     renorm = 1/fov/(sp.deltav_ch*sp.num_channels)**2*sp.X_0()**2*(sp.Y_0()*sp.deltav_ch*sp.num_channels)*(sp.lambda_0()**2*units.m**2/2/constants.k_B)**2*units.Jy**2
     renorm = renorm.to('K^2').value
     return renorm
+
+def centre_to_edges(arr):
+    '''
+    Extend a monotonic array so that the original array is the middle point of the output array.
+    '''
+    result = arr.copy()
+    dx = np.diff(arr)
+    result = np.append(result[:-1]-dx/2,result[-2:]+dx[-2:]/2)
+    return result

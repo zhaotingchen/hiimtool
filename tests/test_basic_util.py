@@ -1,4 +1,4 @@
-from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,unravel_list,get_taper_renorm,cal_cov_simple,strlist_to_str,jy2_to_k2
+from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,unravel_list,get_taper_renorm,cal_cov_simple,strlist_to_str,jy2_to_k2,centre_to_edges
 import pytest
 import numpy as np
 from astropy.cosmology import Planck15,Planck18
@@ -171,4 +171,8 @@ def test_cal_cov_simple():
 
 def test_strlist_to_str():
     assert strlist_to_str([['0','1'],['2','3']]) == '0,1,2,3'
+
+def test_centre_to_edges():
+    outarr = centre_to_edges(np.linspace(0.5,9.5,10))
+    assert np.allclose(outarr,np.linspace(0,10,11))
     
