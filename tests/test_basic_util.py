@@ -1,4 +1,4 @@
-from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,unravel_list,get_taper_renorm,cal_cov_simple,get_mask_renorm_simple
+from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,unravel_list,get_taper_renorm,cal_cov_simple,strlist_to_str,jy2_to_k2,centre_to_edges,get_mask_renorm_simple
 import pytest
 import numpy as np
 from astropy.cosmology import Planck15,Planck18
@@ -89,6 +89,7 @@ def test_Specs():
     assert sp.k_para().max() == 0.21842205206818646
     assert sp.k_perp(0) == 0
     assert np.allclose(sp.lambda_0(),lamb_21*(1+sp.z_0()))
+    assert np.allclose(jy2_to_k2(sp,1),7.991091511964673e-12)
     
 def test_itr_tnsq_avg():
     rand_arr = np.random.normal(0,1,size=(1000,100))
@@ -171,3 +172,11 @@ def test_cal_cov_simple():
     cov_test = cal_cov_simple(rand)
     cov_test /= np.sqrt(np.diagonal(cov_test))[:,None]*np.sqrt(np.diagonal(cov_test))[None,:]
     assert np.allclose(cov_test,[[1,-1],[-1,1]])
+
+def test_strlist_to_str():
+    assert strlist_to_str([['0','1'],['2','3']]) == '0,1,2,3'
+
+def test_centre_to_edges():
+    outarr = centre_to_edges(np.linspace(0.5,9.5,10))
+    assert np.allclose(outarr,np.linspace(0,10,11))
+
