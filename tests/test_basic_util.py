@@ -1,4 +1,4 @@
-from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,unravel_list,get_taper_renorm,cal_cov_simple,strlist_to_str,jy2_to_k2,centre_to_edges
+from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,unravel_list,get_taper_renorm,cal_cov_simple,strlist_to_str,jy2_to_k2,centre_to_edges,get_mask_renorm_simple
 import pytest
 import numpy as np
 from astropy.cosmology import Planck15,Planck18
@@ -101,7 +101,7 @@ def test_itr_tnsq_avg():
 def test_delay_transform():
     test_arr = np.ones(np.random.randint(1,100,size=1)[0])
     test_f_arr = delay_transform(test_arr,1,test_arr)
-    assert test_f_arr[0] == len(test_arr)
+    assert test_f_arr[0].real == len(test_arr)
     assert np.allclose(test_f_arr[1:],0)
     with pytest.raises(AssertionError) as exc_info:
         delay_transform(test_arr,1,test_arr[:-1])
@@ -158,6 +158,10 @@ def test_get_taper_renorm():
     window = np.ones(100)
     assert np.allclose(get_taper_renorm(window),1.0)
 
+def test_get_mask_renorm_simple():
+    window = np.ones(100)
+    assert np.allclose(get_mask_renorm_simple(window),1.0)
+
 def test_unravel_list():
     inlist = [[1,2],[3,4]]
     assert unravel_list(inlist) == [1,2,3,4]
@@ -175,4 +179,4 @@ def test_strlist_to_str():
 def test_centre_to_edges():
     outarr = centre_to_edges(np.linspace(0.5,9.5,10))
     assert np.allclose(outarr,np.linspace(0,10,11))
-    
+
