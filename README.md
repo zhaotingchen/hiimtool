@@ -4,8 +4,11 @@
 - `hiimtool.grid_util` provides efficient visibility gridding tools for [**casa**](https://casadocs.readthedocs.io/en/stable/) `measurementset` files suitable for parallel computing.
 - `hiimtool.hiimvis` deals with 21cm power spectrum estimation in visibility using delay transform techniques.
 - `hiimtool.tnsim_util` can be used to generate thermal noise simulations.
-- `hiimtool.hiimimage` includes quadratic estimator for 21cm power spectrum in image space, as well as foreground removal tools.
-- `hiimtool.util` contains miscellaneous utility functions.
+- `hiimtool.power_util` includes quadratic estimator for 21cm power spectrum in image space, as well as foreground removal tools.
+- `hiimtool.util` contains miscellaneous utility functions for power spectrum estimations.
+- `hiimtool.basic_util` contains basic utility functions.
+- `hiimtool.config_util` contains function for handling configuration files and generate slurm sbatch scripts for [interim](https://github.com/zhaotingchen/hiim_pipeline/tree/main/interim).
+- `hiimtool.ms_tool` deals with measurementset.
 
 This package is still very much under construction, with loads of documentatino and tests missing. See some [examples](examples/) for some basic usage.
 
