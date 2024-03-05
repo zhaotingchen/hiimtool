@@ -514,6 +514,21 @@ def cal_cov_simple(inp):
     cov = np.mean(data[:,None,:]*data[None,:,:],axis=-1)
     return cov
 
+def get_corr_mat(cov):
+    '''
+    Calculate the correlation of a covariance matrix.
+    
+    Parameters
+    ----------
+        cov: numpy array. The covariance matrix.
+
+    Returns
+    -------
+        corr: numpy array.
+    '''
+    corr = cov/np.sqrt(np.diagonal(cov))[:,None]/np.sqrt(np.diagonal(cov))[None,:]
+    return corr
+
 def strlist_to_str(inp):
     """
     Unravel a list of strs into one comma-separated string.
