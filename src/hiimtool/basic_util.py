@@ -565,3 +565,47 @@ def centre_to_edges(arr):
     dx = np.diff(arr)
     result = np.append(result[:-1]-dx/2,result[-2:]+dx[-2:]/2)
     return result
+
+def cov_visual(cov_mat,ax1=0,ax2=1):
+    '''
+    A function to visualise the covariance matrix. See Eq. 47 of 1910.09273.
+
+    Parameters
+    ----------
+        cov_mat: numpy array.
+        The covariance matrix.
+        
+        ax1: int, default 0.
+        The first axis to visualise.
+
+        ax2: int, default 1.
+        The second axis to visualise.
+
+    Returns
+    -------
+        maj_ax: float.
+        the major axis of the 1-sigma ellipse.
+
+        min_ax: float.
+        the minor axis of the 1-sigma ellipse.
+
+        phi: float.
+        the rotation angle of the ellipse.
+    
+    '''
+    maj_ax = np.sqrt(
+        0.5*(cov_mat[ax1,ax1]+cov_mat[ax2,ax2])
+        +np.sqrt(0.25*(cov_mat[ax1,ax1]-cov_mat[ax2,ax2])**2+cov_mat[ax1,ax2]**2)
+    )
+    min_ax = np.sqrt(
+        0.5*(cov_mat[ax1,ax1]+cov_mat[ax2,ax2])
+        -np.sqrt(0.25*(cov_mat[ax1,ax1]-cov_mat[ax2,ax2])**2+cov_mat[ax1,ax2]**2)
+    )
+    if cov_mat[ax1,ax2] == 0:
+        if cov_mat[ax1,ax1]>=cov_mat[ax2,ax2]:
+            phi =0
+        else:
+            phi = 180
+    else:
+        phi = 0.5*np.arctan2(2*cov_mat[ax1,ax2],(cov_mat[ax1,ax1]-cov_mat[ax2,ax2]))*180/np.pi
+    return maj_ax,min_ax,phi
