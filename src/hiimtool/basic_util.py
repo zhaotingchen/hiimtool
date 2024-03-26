@@ -134,10 +134,13 @@ def find_block_id(filename):
 
 vfind_id = np.vectorize(find_block_id)
 
-def find_scan(filename):
-    reex = '\.[0-9][0-9][0-9][0-9]\.'
+def find_scan(filename,strict=False):
+    if strict:
+        reex = '\.[0-9][0-9][0-9][0-9]\.ms'
+    else:
+        reex = '\.[0-9][0-9][0-9][0-9]\.'
     result = re.findall(reex, filename)
-    if len(result) == 0:
+    if len(result) == 0 and not strict:
         reex = '_[0-9][0-9][0-9][0-9]_'
         result = re.findall(reex, filename)
     if len(result) == 0:
@@ -145,7 +148,10 @@ def find_scan(filename):
     if result.count(result[0]) != len(result):
         raise ValueError("ambiguous scan id from filename "+filename)
     result = result[0]
-    return result[1:-1]
+    if strict:
+        return result[1:-3]
+    else:
+        return result[1:-1]
 
 vfind_scan = np.vectorize(find_scan)
 

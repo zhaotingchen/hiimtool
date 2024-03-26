@@ -155,7 +155,7 @@ def sumamp(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',fill=False,ve
     return vis_sum,count
     
 
-def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',col='corrected_data',fill=False,verbose=False,ignore_flag=False):
+def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',col='corrected_data',fill=False,verbose=False,ignore_flag=False,extra_flag=False,ifraxis=False,scratch_dir=None):
     '''
     Returns the gridded visibility sum and the baseline number counts of a given scan for a ms file.
     Note that the output is **SUMMED** visibility not average!
@@ -193,6 +193,16 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',col='correcte
         ignore_flag: Boolean, default False
             Whether to ignore the flags, useful for not applying flags to the model visibility.
 
+        extra_flag: Boolean array, default False
+            Extra flag to be applied to the data. Must to compatible to the shape of the flags.
+
+        ifraxis: Boolean, default False
+            Whether to reshape to the row into (num_time,num_bl). Only useful when `extra_flag` needs certain shape of the data (timestep or antenna pair).
+
+        scratch_dir: string, default None
+            If not None, the gridded visibility and baseline counts are saved to the specified directory. 
+        
+
     Returns
     -------
         vis_gridded: complex array of shape (num_ch,num_uv,num_uv).
@@ -210,6 +220,8 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',col='correcte
         sign = np.array([1,-1])
         
     filename = submslist[scan_indx]
+    scan_id = vfind_scan(submslist)[scan_indx]
+    block_id = vfind_id(submslist)[scan_indx]
     msset = ms()
     msset.open(filename)
     #if sel_ch is not None:
@@ -223,7 +235,7 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',col='correcte
     num_ch = len(freq_arr)    
 
     #get all the data needed
-    data,uarr,varr,flag = read_ms(submslist[scan_indx],[col,'u','v','flag'],None,verbose)
+    data,uarr,varr,flag = read_ms(submslist[scan_indx],[col,'u','v','flag'],None,verbose,ifraxis)
     if sel_ch is not None:
         data = data[:,sel_ch[1]:sel_ch[1]+sel_ch[0],:]
         flag = flag[:,sel_ch[1]:sel_ch[1]+sel_ch[0],:]
@@ -235,23 +247,37 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',col='correcte
     lamb_0 = (constants.c/f_21/units.Hz).to('m').value*(1+z_0)
     
     if verbose:
-        print('Gridding...',datetime.datetime.now().time().strftime("%H:%M:%S"))
+        print('Gridding block', block_id,'Scan', scan_id,datetime.datetime.now().time().strftime("%H:%M:%S"))
     # meter to wavelength
     uarr /= lamb_0
     varr /= lamb_0
+
+    
+    flag += extra_flag
     flag_I = (flag[pol[0]]+flag[pol[1]])>0  # if XX or YY is flagged then I is flagged 
     indx = flag_I.mean(axis=0)<flag_frac
     if indx.sum()==0:
         if verbose:
             print('block', block,'Scan',scan,'fully flagged',
               datetime.datetime.now().time().strftime("%H:%M:%S"))
+        if scratch_dir is not None:
+            np.save(scratch_dir+'vis_'+block_id+'_'+scan_id+'_'+stokes,0.0+0.0j)
+            np.save(scratch_dir+'count_'+block_id+'_'+scan_id+'_'+stokes,0.0)
         return 0.0+0.0j,0.0
     #get rid of the flag_frac excluded channels
-    data = data[:,:,indx] 
+    data = data[:,:,indx]
     flag = flag[:,:,indx]
     uarr = uarr[indx]
     varr = varr[indx]
     flag_I = flag_I[:,indx]
+
+    #if ifraxis, unravel the last two axis into one
+    if ifraxis:
+        uarr = uarr.ravel()
+        varr = varr.ravel()
+        data = data.reshape((len(data),sel_ch[0],-1))
+        flag = flag.reshape((len(flag),sel_ch[0],-1))
+        flag_I = flag_I.reshape((sel_ch[0],-1))
     
     if fill:
         for p_indx in pol: # XX and YY
@@ -280,8 +306,11 @@ def worker(scan_indx,submslist,uvedges,flag_frac,sel_ch,stokes='I',col='correcte
             count[i],_,_ = np.histogram2d(uarr,varr,bins=[uvedges,uvedges],weights=(1-flag_I[i]))
     if fill:
         count,_,_ = np.histogram2d(uarr,varr,bins=[uvedges,uvedges],)
+    if scratch_dir is not None:
+        np.save(scratch_dir+'vis_'+block_id+'_'+scan_id+'_'+stokes,vis_gridded)
+        np.save(scratch_dir+'count_'+block_id+'_'+scan_id+'_'+stokes,count)
     if verbose:
-        print('Finished',datetime.datetime.now().time().strftime("%H:%M:%S"))
+        print('Finished block', block_id,'Scan', scan_id,datetime.datetime.now().time().strftime("%H:%M:%S"))
     return vis_gridded,count
 
 def save_scan(i,args):
