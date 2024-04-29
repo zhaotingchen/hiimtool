@@ -1,4 +1,4 @@
-from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,unravel_list,get_taper_renorm,cal_cov_simple,strlist_to_str,jy2_to_k2,centre_to_edges,get_mask_renorm_simple,get_corr_mat,cov_visual
+from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,unravel_list,get_taper_renorm,cal_cov_simple,strlist_to_str,jy2_to_k2,centre_to_edges,get_mask_renorm_simple,get_corr_mat,cov_visual,himf_pars_jones18,tully_fisher
 import pytest
 import numpy as np
 from astropy.cosmology import Planck15,Planck18
@@ -101,7 +101,7 @@ def test_itr_tnsq_avg():
 def test_delay_transform():
     test_arr = np.ones(np.random.randint(1,100,size=1)[0])
     test_f_arr = delay_transform(test_arr,1,test_arr)
-    assert test_f_arr[0].real == len(test_arr)
+    assert np.allclose(test_f_arr[0].real,len(test_arr))
     assert np.allclose(test_f_arr[1:],0)
     with pytest.raises(AssertionError) as exc_info:
         delay_transform(test_arr,1,test_arr[:-1])
@@ -117,10 +117,11 @@ def test_get_conv_mat():
 def test_himf():
     h_70 = Planck18.h/0.7
     mmin=6
-    phi_star = 4.5*1e-3*h_70**3 # in Mpc-3 dex-1
-    m_star = np.log10(10**(9.94)/h_70**2)  # in log10 Msun
-    alpha = -1.25
-    himf_pars = [phi_star,m_star,alpha]
+    himf_pars = himf_pars_jones18(h_70)
+    #phi_star = 4.5*1e-3*h_70**3 # in Mpc-3 dex-1
+    #m_star = np.log10(10**(9.94)/h_70**2)  # in log10 Msun
+    #alpha = -1.25
+    #himf_pars = [phi_star,m_star,alpha]
     nhi,omegahi,psn = cal_himf(himf_pars,mmin,Planck18)
     assert np.allclose(nhi,0.13980687586146462)
     assert np.allclose(omegahi,0.00036495842278914405)
@@ -194,3 +195,7 @@ def test_cov_visual():
     assert np.allclose(maj_ax,np.sqrt(2))
     maj_ax,min_ax,phi = cov_visual(np.array([[1,1],[1,1]]))
     assert phi == 45
+    
+def test_tully_fisher():
+    assert np.allclose(tully_fisher(np.ones(100),0,2),1e2)
+    assert np.allclose(tully_fisher(np.ones(100),1,2,inv=True),1e-2)
