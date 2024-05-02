@@ -8,6 +8,7 @@ from scipy.ndimage import gaussian_filter
 from scipy.interpolate import interp1d
 from scipy.special import erf
 from numpy.random import default_rng
+from astropy.coordinates import SkyCoord
 
 f_21 = 1420405751.7667 # in Hz
 
@@ -675,3 +676,12 @@ def tully_fisher(xarr,slope,zero_point,inv=False):
     else:
         out = 10**(slope*np.log10(xarr)+zero_point)
     return out
+
+def calcsep(ra0,dec0,ra1,dec1):
+
+    """ Returns angular separation between ra0,dec0 and ra1,dec1 in degrees"""
+
+    c1 = SkyCoord(str(ra0)+'deg',str(dec0)+'deg',frame='fk5')
+    c2 = SkyCoord(str(ra1)+'deg',str(dec1)+'deg',frame='fk5')
+    sep = c1.separation(c2)
+    return sep.value

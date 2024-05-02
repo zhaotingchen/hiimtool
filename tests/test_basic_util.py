@@ -1,4 +1,4 @@
-from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,unravel_list,get_taper_renorm,cal_cov_simple,strlist_to_str,jy2_to_k2,centre_to_edges,get_mask_renorm_simple,get_corr_mat,cov_visual,himf_pars_jones18,tully_fisher
+from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,unravel_list,get_taper_renorm,cal_cov_simple,strlist_to_str,jy2_to_k2,centre_to_edges,get_mask_renorm_simple,get_corr_mat,cov_visual,himf_pars_jones18,tully_fisher,calcsep
 import pytest
 import numpy as np
 from astropy.cosmology import Planck15,Planck18
@@ -199,3 +199,6 @@ def test_cov_visual():
 def test_tully_fisher():
     assert np.allclose(tully_fisher(np.ones(100),0,2),1e2)
     assert np.allclose(tully_fisher(np.ones(100),1,2,inv=True),1e-2)
+    
+def test_calcsep():
+    assert calcsep(0,0,0,90)==90.0
