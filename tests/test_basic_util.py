@@ -1,4 +1,4 @@
-from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,unravel_list,get_taper_renorm,cal_cov_simple,strlist_to_str,jy2_to_k2,centre_to_edges,get_mask_renorm_simple,get_corr_mat,cov_visual,himf_pars_jones18,tully_fisher,calcsep
+from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,unravel_list,get_taper_renorm,cal_cov_simple,strlist_to_str,jy2_to_k2,centre_to_edges,get_mask_renorm_simple,get_corr_mat,cov_visual,himf_pars_jones18,tully_fisher,calcsep,find_indx_for_subarr
 import pytest
 import numpy as np
 from astropy.cosmology import Planck15,Planck18
@@ -202,3 +202,12 @@ def test_tully_fisher():
     
 def test_calcsep():
     assert calcsep(0,0,0,90)==90.0
+    
+def test_find_indx_for_subarr():
+    arr1 = np.arange(100)
+    arr2 = np.arange(1000)
+    assert np.allclose(find_indx_for_subarr(arr1,arr2),np.arange(100))
+    arr2[0] = 1
+    with pytest.raises(AssertionError):
+        find_indx_for_subarr(arr1,arr2)
+    

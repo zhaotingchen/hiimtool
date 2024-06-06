@@ -685,3 +685,30 @@ def calcsep(ra0,dec0,ra1,dec1):
     c2 = SkyCoord(str(ra1)+'deg',str(dec1)+'deg',frame='fk5')
     sep = c1.separation(c2)
     return sep.value
+
+def find_indx_for_subarr(subarr,arr):
+    '''
+    Find the indices of the elements of an array in another array.
+    
+    Parameters
+    ----------
+        subarr: numpy array. 
+            The sub-array to search for. Elements can be repeated.
+        arr: numpy array.
+            the slope of Tully-Fisher relation.
+        zero_point: float.
+            the intercept of Tully-Fisher relation
+        inv: bool, default False.
+            if True, calculate velocity based on input mass.
+            
+    Returns
+    -------
+        out: float array.
+            The output mass if inv=False and velocity if inv=True.
+    '''
+    assert np.unique(arr).size == arr.size, 'the larger array must be unique'
+    # Actually preform the operation...
+    arrsorted = np.argsort(arr)
+    subpos = np.searchsorted(arr[arrsorted], subarr)
+    indices = arrsorted[subpos]
+    return indices
