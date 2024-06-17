@@ -1,5 +1,5 @@
 '''
-The common utility files that does not require any installation of `torch` or `casa.
+The common utility files that does not require any installation of `torch` or `casa`.
 '''
 import numpy as np
 from astropy import constants,units
@@ -7,6 +7,8 @@ import re
 from scipy.ndimage import gaussian_filter
 from scipy.interpolate import interp1d
 from scipy.special import erf
+from numpy.random import default_rng
+from astropy.coordinates import SkyCoord
 
 f_21 = 1420405751.7667 # in Hz
 
@@ -266,6 +268,31 @@ def himf(m,phi_s,m_s,alpha_s):
     out = (np.log(10)*phi_s*(m/m_s)**(alpha_s+1)*np.exp(-m/m_s))
     return out
 
+def himf_pars_jones18(h_70):
+    '''
+    The HIMF parameters measured in [Jones+18](https://arxiv.org/abs/1802.00053).
+    
+    Parameters
+    ----------
+        h_70: float.
+            The Hubble parameter over 70 km/s/Mpc.
+            
+    Returns
+    -------
+        phi_star: float.
+            The amplitude of HIMF in Mpc-3 dex-1.
+        
+        m_star: float.
+            The knee mass of HIMF in log10 solar mass.
+            
+        alpha: float.
+            The slope of HIMF.
+    '''
+    phi_star = 4.5*1e-3*h_70**3 # in Mpc-3 dex-1
+    m_star = np.log10(10**(9.94)/h_70**2)  # in log10 Msun
+    alpha = -1.25
+    return phi_star,m_star,alpha
+
 def cal_himf(x,mmin,cosmo,mmax=11):
     '''
     Calculate the integrated quantity related to the HIMF.
@@ -322,7 +349,7 @@ def cumu_nhi_from_himf(m,mmin,x):
     nhi = np.trapz(himf(marr,x[0],10**x[1],x[2]),x=np.log10(marr),axis=0)
     return nhi
 
-def sample_from_dist(func,xmin,xmax,size=1,cdf=False):
+def sample_from_dist(func,xmin,xmax,size=1,cdf=False,seed=None):
     """
     Sample from custom distribution.
     
@@ -338,6 +365,8 @@ def sample_from_dist(func,xmin,xmax,size=1,cdf=False):
             The size of the sample array
         cdf: bool, default False.
             Wheter PDF or CDF is used.
+        seed: int, default None.
+            Seed for the random number generator. Fixing for reproducible samples.
             
     Returns
     -------
@@ -353,7 +382,8 @@ def sample_from_dist(func,xmin,xmax,size=1,cdf=False):
     cdf_arr -= cdf_arr[0]
     cdf_arr /= cdf_arr[-1]
     cdf_inv = interp1d(cdf_arr,xarr)
-    sample = cdf_inv(np.random.uniform(low=0,high=1,size=size))
+    rng = default_rng(seed=seed)
+    sample = cdf_inv(rng.uniform(low=0,high=1,size=size))
     return sample
 
 def busy_function_simple(xarr,par_a,par_b,par_c,width):
@@ -615,3 +645,99 @@ def cov_visual(cov_mat,ax1=0,ax2=1):
     else:
         phi = 0.5*np.arctan2(2*cov_mat[ax1,ax2],(cov_mat[ax1,ax1]-cov_mat[ax2,ax2]))*180/np.pi
     return maj_ax,min_ax,phi
+
+def tully_fisher(xarr,slope,zero_point,inv=False):
+    '''
+    Tully-Fisher relation.
+    
+    Note that, **regardless of inv**, the slope and zero_point always refer to the Tully-Fisher relation
+    and **not the inverse**.
+    For example, zero_point is always in the unit of log10 mass.
+    
+    Parameters
+    ----------
+        xarr: float array. 
+            input velocity if inv=False and mass if inv=True.
+        slope: float.
+            the slope of Tully-Fisher relation.
+        zero_point: float.
+            the intercept of Tully-Fisher relation
+        inv: bool, default False.
+            if True, calculate velocity based on input mass.
+            
+    Returns
+    -------
+        out: float array.
+            The output mass if inv=False and velocity if inv=True.
+    '''
+    
+    if inv:
+        out = 10**((np.log10(xarr)-zero_point)/slope)
+    else:
+        out = 10**(slope*np.log10(xarr)+zero_point)
+    return out
+
+def calcsep(ra0,dec0,ra1,dec1):
+
+    """ Returns angular separation between ra0,dec0 and ra1,dec1 in degrees"""
+
+    c1 = SkyCoord(str(ra0)+'deg',str(dec0)+'deg',frame='fk5')
+    c2 = SkyCoord(str(ra1)+'deg',str(dec1)+'deg',frame='fk5')
+    sep = c1.separation(c2)
+    return sep.value
+
+def find_indx_for_subarr(subarr,arr):
+    '''
+    Find the indices of the elements of an array in another array.
+    
+    Parameters
+    ----------
+        subarr: numpy array. 
+            The sub-array to search for. Elements can be repeated.
+        arr: numpy array.
+            the slope of Tully-Fisher relation.
+        zero_point: float.
+            the intercept of Tully-Fisher relation
+        inv: bool, default False.
+            if True, calculate velocity based on input mass.
+            
+    Returns
+    -------
+        out: float array.
+            The output mass if inv=False and velocity if inv=True.
+    '''
+    assert np.unique(arr).size == arr.size, 'the larger array must be unique'
+    # Actually preform the operation...
+    arrsorted = np.argsort(arr)
+    subpos = np.searchsorted(arr[arrsorted], subarr)
+    indices = arrsorted[subpos]
+    return indices
+
+def check_unit_equiv(u1,u2):
+    """
+    Check if two units are equivelant
+    """
+    return ((1*u1/u2).si.unit == units.dimensionless_unscaled)
+
+def jy_to_kelvin(val,omega,freq):
+    '''
+    convert Jy/beam to brightness temperature in Kelvin.
+    
+    Parameters
+    ----------
+        val: numpy array. 
+            The input value(s) in Jy/beam or Jy/pix
+        omega: float.
+            beam or pixel area in Steradian.
+        freq: float.
+            the frequency for conversion in Hz.
+            
+    Returns
+    -------
+        result: float array.
+            The brightness temperature in Kelvin.
+    '''
+    freq = freq*units.Hz
+    omega = omega*units.sr
+    result = (val*units.Jy/omega).to(units.K, equivalencies=units.brightness_temperature(freq)).value
+    return result

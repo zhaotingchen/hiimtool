@@ -15,6 +15,7 @@ import pickle
 import configparser
 from astropy.coordinates import SkyCoord
 from casacore import quanta,measures
+from .basic_util import calcsep
 
 meerkat_bands = [(815e6,1080e6,'UHF'),
     (856e6,1711e6,'L'),
@@ -23,15 +24,6 @@ meerkat_bands = [(815e6,1080e6,'UHF'),
     (2188e6,3062e6,'S2'), # 2625.00 1654978576
     (2406e6,3281e6,'S3'), # 2843.75
     (2625e6,3499e6,'S4')] # 3062.50 1653833475
-
-def calcsep(ra0,dec0,ra1,dec1):
-
-    """ Returns angular separation between ra0,dec0 and ra1,dec1 in degrees"""
-
-    c1 = SkyCoord(str(ra0)+'deg',str(dec0)+'deg',frame='fk5')
-    c2 = SkyCoord(str(ra1)+'deg',str(dec1)+'deg',frame='fk5')
-    sep = c1.separation(c2)
-    return sep.value
 
 def read_ms(filename,keys,sel_ch=None,verbose=False,ifraxis=False):
     '''
