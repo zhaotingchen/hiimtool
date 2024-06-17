@@ -1,9 +1,11 @@
-from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,unravel_list,get_taper_renorm,cal_cov_simple,strlist_to_str,jy2_to_k2,centre_to_edges,get_mask_renorm_simple,get_corr_mat,cov_visual,himf_pars_jones18,tully_fisher,calcsep,find_indx_for_subarr
+#from hiimtool.basic_util import p2dim,chisq,vfind_scan,vfind_id,Specs,fill_nan,f_21,itr_tnsq_avg,delay_transform,get_conv_mat,himf,cal_himf,cumu_nhi_from_himf,sample_from_dist,busy_function_simple,busy_function_0,dft_mat,unravel_list,get_taper_renorm,cal_cov_simple,strlist_to_str,jy2_to_k2,centre_to_edges,get_mask_renorm_simple,get_corr_mat,cov_visual,himf_pars_jones18,tully_fisher,calcsep,find_indx_for_subarr,check_unit_equiv,jy_to_kelvin
+from hiimtool.basic_util import *
 import pytest
 import numpy as np
 from astropy.cosmology import Planck15,Planck18
 from scipy.signal import blackmanharris
 from scipy.special import erf
+from astropy import units,constants
 
 
 lamb_21 = 0.21106114054160 # in meters
@@ -132,10 +134,10 @@ def test_himf():
     assert np.allclose(nhi_cumu[-1],nhi)
     
 def test_sample_from_dist():
-    test_sample = sample_from_dist(uniform_pdf,0,1,size=1000000,cdf=False)
+    test_sample = sample_from_dist(uniform_pdf,0,1,size=1000000,cdf=False,seed=42)
     count,_ = np.histogram(test_sample,bins=10)
     assert (np.abs((count-len(test_sample)/10)/(len(test_sample)/10))>0.01).sum() == 0
-    test_sample = sample_from_dist(uniform_cdf,0,1,size=1000000,cdf=True)
+    test_sample = sample_from_dist(uniform_cdf,0,1,size=1000000,cdf=True,seed=42)
     count,_ = np.histogram(test_sample,bins=10)
     assert (np.abs((count-len(test_sample)/10)/(len(test_sample)/10))>0.01).sum() == 0
 
@@ -210,4 +212,14 @@ def test_find_indx_for_subarr():
     arr2[0] = 1
     with pytest.raises(AssertionError):
         find_indx_for_subarr(arr1,arr2)
-    
+
+def test_check_unit_equiv():
+    assert check_unit_equiv(units.m,units.cm)
+    assert not check_unit_equiv(units.m,units.K)
+
+def test_jy_to_kelvin():
+    omega = np.random.uniform(0.01,1)
+    freq = np.random.uniform(0.01,1)*1e9
+    test = jy_to_kelvin(1,omega,freq)
+    test2 = (1*units.Jy/omega*(constants.c/freq/units.Hz)**2/2/constants.k_B).to('K').value
+    assert np.allclose(test,test2)
